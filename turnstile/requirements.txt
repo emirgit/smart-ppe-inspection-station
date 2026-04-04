@@ -1,0 +1,2 @@
+# Adafruit ServoKit - high-level servo control via PCA9685
+adafruit-circuitpython-servokit
