@@ -89,7 +89,6 @@ class MockRfidReader(RfidReader):
             return None
 
         card_id = self._cards[self._index % len(self._cards)]
-        self._index += 1
 
         print(f"\n[MockRfidReader] Ready to scan. Next card will be: {card_id!r}")
         try:
@@ -98,6 +97,7 @@ class MockRfidReader(RfidReader):
             print("\n[MockRfidReader] Interrupted by user.")
             return None
 
+        self._index += 1
         print(f"[MockRfidReader] read_card() → {card_id!r}")
         return card_id
 

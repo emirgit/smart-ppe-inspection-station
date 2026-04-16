@@ -156,6 +156,11 @@ class GateController:
     # Public gate API  (mirrors MOD-02 C/C++ function names)
     # -------------------------------------------------------------------------
 
+    @property
+    def open_duration_s(self) -> float:
+        """Returns the configured duration to hold the gate open."""
+        return self._config.open_duration_s
+
     def gate_open(self) -> None:
         """
         Rotates both servo arms to the open (unlocked) position.

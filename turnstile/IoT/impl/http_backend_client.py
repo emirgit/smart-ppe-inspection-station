@@ -70,10 +70,22 @@ class HttpBackendClient(BackendClient):
 
         Expected JSON response shape (⚠️ VERIFY WITH MOD-04):
         {
-            "id":           "w001",
-            "name":         "Ahmet Yılmaz",
-            "role":         "Construction Worker",
-            "required_ppe": ["HELMET", "VEST", "GLOVES"]
+            "success": true,
+            "data": {
+                "worker": {
+                    "id": 1,
+                    "full_name": "Ahmet Yılmaz",
+                    "role_name": "Construction Worker"
+                },
+                "required_ppe": [
+                    {
+                        "id": 1,
+                        "item_key": "HELMET",
+                        "display_name": "Hard Hat",
+                        "icon_name": "helmet-icon"
+                    }
+                ]
+            }
         }
 
         Args:
@@ -141,12 +153,19 @@ class HttpBackendClient(BackendClient):
 
         Request JSON body sent (⚠️ VERIFY WITH MOD-04):
         {
-            "card_id":      "1A2B3C4D",
-            "worker_id":    "w001",         // null for UNKNOWN_CARD
-            "result":       "PASS",         // "PASS" | "FAIL" | "UNKNOWN_CARD"
-            "detected_ppe": ["HELMET"],
-            "missing_ppe":  ["VEST"],
-            "timestamp_ms": 1712834400000
+            "worker_id":          "w001",
+            "rfid_uid_scanned":   "1A2B3C4D",
+            "result":             "PASS",         // "PASS" | "FAIL" | "UNKNOWN_CARD"
+            "inspection_time_ms": 1712834400000,
+            "camera_snapshot_url": null,
+            "detections": [
+                {
+                    "ppe_item_id": 1,
+                    "was_required": true,
+                    "was_detected": true,
+                    "confidence": 0.99
+                }
+            ]
         }
 
         Args:

@@ -21,6 +21,8 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 #include <time.h>
+#include <stddef.h>
+#include <stdio.h>
 
 /* ============================================================================
  * CONSTANTS & MACROS
@@ -718,9 +720,11 @@ const char *rfid_esp32_get_version_string(void);
  * @param msg Message to print on error
  */
 #define RFID_ASSERT(err, msg) \
-    if (RFID_IS_ERROR(err)) { \
-        fprintf(stderr, "RFID Error [%d]: %s\n", err, msg); \
-    }
+    do { \
+        if (RFID_IS_ERROR(err)) { \
+            fprintf(stderr, "RFID Error [%d]: %s\n", err, msg); \
+        } \
+    } while (0)
 
 /* ============================================================================
  * CONSTANTS - Error Message Strings

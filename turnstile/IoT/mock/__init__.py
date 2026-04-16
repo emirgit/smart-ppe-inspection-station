@@ -7,7 +7,7 @@ Exposes all mock classes for easy import during development and testing.
 None of these require real hardware; they simulate behaviour in-process.
 
 Usage:
-    from mock import MockRfidReader, MockBackendClient, MockDisplayClient
+    from turnstile.IoT.mock import MockRfidReader, MockBackendClient, MockDisplayClient
 """
 
 from .mock_rfid_reader    import MockRfidReader

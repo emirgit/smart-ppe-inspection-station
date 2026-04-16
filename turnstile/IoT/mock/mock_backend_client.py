@@ -131,11 +131,6 @@ class MockBackendClient(BackendClient):
             True (mock always accepts the log).
         """
         self._log_count += 1
-        ts = (
-            datetime.fromtimestamp(log.timestamp_ms / 1000, tz=timezone.utc).isoformat()
-            if log.timestamp_ms
-            else "—"
-        )
         payload = {
             "worker_id":    log.worker_id,
             "rfid_uid_scanned": log.card_id,

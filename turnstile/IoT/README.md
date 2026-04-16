@@ -35,7 +35,8 @@
 |---|---|---|
 | Python | 3.11+ | Runtime language |
 | `RPi.GPIO` / `gpiozero` | latest | GPIO access for camera trigger and status signals |
-| `picamera2` | latest | Camera frame capture on Raspberry Pi |
+| `opencv-python` / system OpenCV (`cv2`) | latest | Camera frame capture via `cv2.VideoCapture` on Raspberry Pi |
+| `picamera2` | latest | Optional Raspberry Pi camera stack support, if used by the local camera setup |
 | `spidev` / `mfrc522` | latest | SPI driver for RC522 RFID reader (used when mode=SPI) |
 | `requests` | latest | HTTP client for BackendClient and WiFi RFID polling |
 
@@ -47,7 +48,7 @@
 ## Quick-Start Integration Example
 
 ```python
-from iot_module import IoTModule, IoTConfig
+from turnstile.IoT.include.iot_module import IoTModule, IoTConfig
 
 # Obtain a concrete implementation of IoTModule
 iot: IoTModule = get_iot_impl()
@@ -72,7 +73,7 @@ iot.stop()
 ### RfidReader standalone usage
 
 ```python
-from rfid_reader import RfidReader, RfidConfig, RfidMode
+from turnstile.IoT.include.rfid_reader import RfidReader, RfidConfig, RfidMode
 
 reader: RfidReader = get_rfid_impl()
 reader.init(RfidConfig(mode=RfidMode.SPI))
@@ -87,8 +88,8 @@ reader.cleanup()
 ### BackendClient standalone usage
 
 ```python
-from backend_client import BackendClient
-from models import EntryLog, AccessDecision
+from turnstile.IoT.include.backend_client import BackendClient
+from turnstile.IoT.include.models import EntryLog, AccessDecision
 
 client: BackendClient = get_backend_impl()
 
@@ -99,7 +100,7 @@ if worker:
 client.log_entry(EntryLog(
     card_id="1A2B3C4D",
     worker_id=worker.worker_id,
-    decision=AccessDecision.GRANTED,
+    decision=AccessDecision.PASS,
     detected_ppe=["HELMET", "VEST"],
     missing_ppe=[],
     timestamp_ms=current_time_ms,
@@ -195,7 +196,7 @@ client.log_entry(EntryLog(
 | Type | Description |
 |---|---|
 | `AccessDecision` | Enum: `FAIL = 0`, `PASS = 1`, `UNKNOWN_CARD = 2` — aligned with MOD-04 `EntryResult` |
-| `WorkerInfo` | Worker profile: `worker_id`, `worker_name`, `role`, `required_ppe: list[str]` |
+| `WorkerInfo` | Worker profile: `worker_id`, `worker_name`, `role`, `required_ppe: list[RequiredPpeItem]` where each item includes `id` and `item_key` |
 | `EntryLog` | Access attempt record: `card_id`, `worker_id`, `decision`, `detected_ppe`, `missing_ppe`, `timestamp_ms` |
 
 ---

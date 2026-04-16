@@ -63,8 +63,8 @@ class BackendClient(ABC):
         Called after every access decision (GRANTED or DENIED).
 
         Args:
-            log: EntryLog containing card ID, worker ID, decision,
-                 detected PPE, missing PPE, and timestamp.
+            log: EntryLog containing card ID, worker ID, decision, PPE lists,
+                 and timestamp.
 
         Returns:
             True if the log was accepted by the backend, False otherwise.

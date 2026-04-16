@@ -210,7 +210,7 @@ class IoTOrchestrator(IoTModule):
         self._set_state(SystemState.IDLE)
         self._display.show_idle()
 
-        card_id = self._rfid.read_card(timeout_ms=self._config.denied_timeout_ms)
+        card_id = self._rfid.read_card(timeout_ms=None)
         if card_id is None or self._stop_event.is_set():
             return   # timeout or stop requested
 
@@ -350,7 +350,7 @@ class IoTOrchestrator(IoTModule):
         ))
 
         # Keep gate open for the configured duration, then close
-        time.sleep(self._gate._config.open_duration_s)
+        time.sleep(self._gate.open_duration_s)
         self._gate.gate_close()
 
     def _deny_access(

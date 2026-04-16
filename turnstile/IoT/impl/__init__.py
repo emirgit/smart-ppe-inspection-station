@@ -6,7 +6,7 @@ MOD-03 IoT Module — Concrete Implementations Package
 Exposes all production-ready implementation classes.
 
 Usage:
-    from impl import SpiRfidReader, HttpBackendClient, GateController, IoTOrchestrator
+    from turnstile.IoT.impl import SpiRfidReader, HttpBackendClient, GateController, IoTOrchestrator
 """
 
 from .rfid_spi            import SpiRfidReader
