@@ -4,10 +4,10 @@ Ortak test fixture'ları ve mock yapılandırmaları.
 import pytest
 from unittest.mock import MagicMock
 
-from turnstile.IoT.mock.mock_rfid_reader import MockRfidReader
-from turnstile.IoT.mock.mock_backend_client import MockBackendClient
-from turnstile.IoT.mock.mock_display_client import MockDisplayClient
-from turnstile.IoT.impl.gate_control import GateController
+
+
+
+from src.iot_core.hardware.gate_control import GateController
 
 @pytest.fixture
 def mock_gate_controller():

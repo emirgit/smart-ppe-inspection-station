@@ -33,7 +33,7 @@ import time
 import logging
 from typing import Optional
 
-from ..include.rfid_reader import RfidReader, RfidConfig, RfidMode
+from src.iot_core.interfaces.rfid_reader import RfidReader, RfidConfig, RfidMode
 
 logger = logging.getLogger(__name__)
 
