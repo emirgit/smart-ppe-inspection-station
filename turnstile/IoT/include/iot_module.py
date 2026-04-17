@@ -18,10 +18,15 @@ Authors : Alperen Söylen       (220104004024) — Primary
           Emre İlhan Şenel    (230104004907) — Secondary
           Hüseyin Elyesa Yeşilyurt (210104004080) — Secondary
 Date    : 2026-03-29
-Version : 0.1
+Version : 0.2
 
 Changelog:
     v0.1 (2026-03-29) — Initial draft; new file (no prior version)
+    v0.2 (2026-04-17) — Added SystemState.UNKNOWN_CARD so the display
+                        bridge can render the unregistered-card screen
+                        as a distinct state instead of reusing DENIED.
+                        Added display WebSocket fields to IoTConfig
+                        (host/port/path) for the new MOD-05 transport.
 
 ─────────────────────────────────────────────────────────────
 SYSTEM FLOW
@@ -74,13 +79,20 @@ class SystemState(IntEnum):
     Transitions:
         IDLE → IDENTIFYING → INSPECTING → GRANTED → IDLE
                            ↘              ↘
-                            IDLE          DENIED → IDLE
+                            UNKNOWN_CARD  DENIED → IDLE
+                            → IDLE
+
+    UNKNOWN_CARD is a distinct terminal state (not a flavour of DENIED) so
+    that MOD-05 can render its own unregistered-card screen and so that
+    metrics or auditing layers can count unknown-card events separately
+    from PPE failures.
     """
-    IDLE        = 0  # Waiting for RFID card
-    IDENTIFYING = 1  # Card read; querying backend for worker info
-    INSPECTING  = 2  # Worker identified; running AI PPE detection
-    GRANTED     = 3  # All required PPE present; gate opening
-    DENIED      = 4  # Required PPE missing or card unknown; gate locked
+    IDLE         = 0  # Waiting for RFID card
+    IDENTIFYING  = 1  # Card read; querying backend for worker info
+    INSPECTING   = 2  # Worker identified; running AI PPE detection
+    GRANTED      = 3  # All required PPE present; gate opening
+    DENIED       = 4  # Required PPE missing; gate locked
+    UNKNOWN_CARD = 5  # RFID card not registered in backend
 
 
 # =============================================================================
@@ -95,6 +107,14 @@ class IoTConfig:
     denied_timeout_ms: int   = 5000   # Time before DENIED resets to IDLE (ms)
     frame_width:       int   = 640    # Camera frame width passed to AI module
     frame_height:      int   = 640    # Camera frame height passed to AI module
+
+    # ---- MOD-05 display WebSocket bridge ---------------------------------
+    # Bind address/port for the WebSocket server that pushes display state
+    # to MOD-05.  These are read by WebSocketDisplayNotifier; they have no
+    # effect when a different DisplayNotifier (e.g. the mock) is wired in.
+    display_ws_host:   str   = "0.0.0.0"
+    display_ws_port:   int   = 8080
+    display_ws_path:   str   = "/ws/display"
 
 
 # =============================================================================

@@ -26,11 +26,17 @@ Inter-module calls:
         See the marked TODO block inside _run_inspection().
 
 Authors : Alperen Söylen  (220104004024) — Primary
+          Emre İlhan Şenel (230104004907) — v0.2 display bridge wiring
 Date    : 2026-04-11
-Version : 0.1
+Version : 0.2
 
 Changelog:
     v0.1 (2026-04-11) — Initial implementation
+    v0.2 (2026-04-17) — Added optional DisplayNotifier injection so the
+                        MOD-05 WebSocket bridge can observe every state
+                        transition without altering the legacy
+                        DisplayClient call sites; routed unknown-card
+                        flow through SystemState.UNKNOWN_CARD.
 """
 
 from __future__ import annotations
@@ -42,12 +48,13 @@ from typing import Optional, TYPE_CHECKING
 
 import cv2
 
-from ..include.iot_module    import IoTModule, IoTConfig, SystemState
-from ..include.rfid_reader   import RfidReader
-from ..include.backend_client import BackendClient
-from ..include.display_client import DisplayClient
-from ..include.models        import EntryLog, AccessDecision, WorkerInfo, DetectionItem
-from .gate_control           import GateController
+from ..include.iot_module      import IoTModule, IoTConfig, SystemState
+from ..include.rfid_reader     import RfidReader
+from ..include.backend_client  import BackendClient
+from ..include.display_client  import DisplayClient
+from ..include.display_notifier import DisplayNotifier
+from ..include.models          import EntryLog, AccessDecision, WorkerInfo, DetectionItem, RequiredPpeItem
+from .gate_control             import GateController
 
 if TYPE_CHECKING:
     # Imported only for type hints; avoids hard dependency at module load time.
@@ -81,6 +88,7 @@ class IoTOrchestrator(IoTModule):
         gate:          GateController,
         ai:            "AIVisionModule",
         camera_device: int = 0,
+        notifier:      Optional[DisplayNotifier] = None,
     ) -> None:
         self._rfid          = rfid
         self._backend       = backend
@@ -88,6 +96,10 @@ class IoTOrchestrator(IoTModule):
         self._gate          = gate
         self._ai            = ai
         self._camera_device = camera_device
+        # Optional rich-payload notifier for the MOD-05 WebSocket bridge.
+        # Kept separate from ``_display`` so existing imperative DisplayClient
+        # implementations (mocks, prototypes) keep working unchanged.
+        self._notifier: Optional[DisplayNotifier] = notifier
 
         self._config:  IoTConfig    = IoTConfig()
         self._state:   SystemState  = SystemState.IDLE
@@ -142,8 +154,22 @@ class IoTOrchestrator(IoTModule):
             self._config.frame_height,
         )
 
+        # -- Display notifier (MOD-05 WebSocket bridge) ----------------------
+        if self._notifier is not None:
+            try:
+                self._notifier.start()
+            except Exception as exc:
+                # A display bridge failure must not prevent the turnstile
+                # from operating; log and continue with notifier disabled.
+                logger.warning(
+                    "init: DisplayNotifier.start() failed, disabling notifier: %s",
+                    exc,
+                )
+                self._notifier = None
+
         # -- Display: show initial idle screen -------------------------------
         self._display.show_idle()
+        self._notify_idle()
         self._set_state(SystemState.IDLE)
 
         logger.info("IoTOrchestrator: all components initialised OK")
@@ -190,6 +216,15 @@ class IoTOrchestrator(IoTModule):
 
         self._rfid.cleanup()
         self._gate.cleanup()
+
+        # Tear down the display bridge last so any final IDLE event we
+        # already broadcast above had a chance to ship.
+        if self._notifier is not None:
+            try:
+                self._notifier.stop()
+            except Exception as exc:
+                logger.warning("stop: DisplayNotifier.stop() error: %s", exc)
+
         logger.info("IoTOrchestrator: all resources released")
 
     def get_state(self) -> SystemState:
@@ -205,10 +240,12 @@ class IoTOrchestrator(IoTModule):
         """
         Runs one complete access control cycle:
             IDLE → IDENTIFYING → INSPECTING → GRANTED / DENIED → IDLE
+                                            ↘ UNKNOWN_CARD     → IDLE
         """
         # ── IDLE: wait for card ──────────────────────────────────────────────
         self._set_state(SystemState.IDLE)
         self._display.show_idle()
+        self._notify_idle()
 
         card_id = self._rfid.read_card(timeout_ms=None)
         if card_id is None or self._stop_event.is_set():
@@ -218,6 +255,7 @@ class IoTOrchestrator(IoTModule):
 
         # ── IDENTIFYING: query backend ───────────────────────────────────────
         self._set_state(SystemState.IDENTIFYING)
+        self._notify_identifying(card_id)
         worker: Optional[WorkerInfo] = self._backend.get_worker(card_id)
 
         if worker is None:
@@ -230,13 +268,17 @@ class IoTOrchestrator(IoTModule):
                 detections=[]
             ))
             self._display.show_unknown_card()
-            self._set_state(SystemState.DENIED)
+            # UNKNOWN_CARD is a distinct state on the bus so the display
+            # can render its own screen and so audit/metrics can count
+            # unknown cards separately from PPE failures.
+            self._set_state(SystemState.UNKNOWN_CARD)
+            self._notify_unknown_card(card_id)
             time.sleep(self._config.denied_timeout_ms / 1000.0)
             return
 
         # extract item_key strings for easier manipulation internally
         required_ppe_keys = [p.item_key for p in worker.required_ppe]
-        
+
         logger.info(
             "_cycle: identified — %s (%s) required PPE: %s",
             worker.worker_name, worker.role, required_ppe_keys
@@ -245,6 +287,7 @@ class IoTOrchestrator(IoTModule):
         # ── INSPECTING: capture frame + run AI ──────────────────────────────
         self._set_state(SystemState.INSPECTING)
         self._display.show_scanning()
+        self._notify_inspecting(worker)
 
         detected_ppe: list[str] = self._run_inspection()
 
@@ -326,8 +369,9 @@ class IoTOrchestrator(IoTModule):
         logger.info("_grant_access: PASS — %s", worker.worker_name)
 
         self._display.show_granted(worker.worker_name)
+        self._notify_pass(worker, detected_ppe)
         self._gate.gate_open()
-        
+
         # Build detections list
         detections = []
         for ppe_item in worker.required_ppe:
@@ -367,7 +411,8 @@ class IoTOrchestrator(IoTModule):
         )
 
         self._display.show_denied(missing_ppe)
-        
+        self._notify_fail(worker, detected_ppe, missing_ppe)
+
         # Build detections list
         detections = []
         for ppe_item in worker.required_ppe:
@@ -404,3 +449,97 @@ class IoTOrchestrator(IoTModule):
     def _now_ms() -> int:
         """Returns the current Unix timestamp in milliseconds."""
         return int(time.time() * 1000)
+
+    # =========================================================================
+    # Internal: display notifier helpers
+    # -------------------------------------------------------------------------
+    # These wrap every notifier call in a try/except so that a bridge
+    # failure (network blip, slow client, malformed worker payload)
+    # cannot derail the access-control state machine running on the
+    # turnstile.  All exceptions are logged at warning level only.
+    # =========================================================================
+
+    def _notify_idle(self) -> None:
+        if self._notifier is None:
+            return
+        try:
+            self._notifier.notify_idle()
+        except Exception as exc:
+            logger.warning("notifier.notify_idle() failed: %s", exc)
+
+    def _notify_identifying(self, card_id: str) -> None:
+        if self._notifier is None:
+            return
+        try:
+            self._notifier.notify_identifying(card_id)
+        except Exception as exc:
+            logger.warning("notifier.notify_identifying() failed: %s", exc)
+
+    def _notify_unknown_card(self, card_id: str) -> None:
+        if self._notifier is None:
+            return
+        try:
+            self._notifier.notify_unknown_card(card_id)
+        except Exception as exc:
+            logger.warning("notifier.notify_unknown_card() failed: %s", exc)
+
+    def _notify_inspecting(self, worker: WorkerInfo) -> None:
+        if self._notifier is None:
+            return
+        try:
+            self._notifier.notify_inspecting(worker, list(worker.required_ppe))
+        except Exception as exc:
+            logger.warning("notifier.notify_inspecting() failed: %s", exc)
+
+    def _notify_pass(self, worker: WorkerInfo, detected_ppe: list[str]) -> None:
+        if self._notifier is None:
+            return
+        try:
+            detected_items = self._items_for_keys(worker.required_ppe, detected_ppe)
+            self._notifier.notify_pass(worker, detected_items)
+        except Exception as exc:
+            logger.warning("notifier.notify_pass() failed: %s", exc)
+
+    def _notify_fail(
+        self,
+        worker:       WorkerInfo,
+        detected_ppe: list[str],
+        missing_ppe:  list[str],
+    ) -> None:
+        if self._notifier is None:
+            return
+        try:
+            detected_items = self._items_for_keys(worker.required_ppe, detected_ppe)
+            missing_items  = self._items_for_keys(worker.required_ppe, missing_ppe)
+            self._notifier.notify_fail(worker, detected_items, missing_items)
+        except Exception as exc:
+            logger.warning("notifier.notify_fail() failed: %s", exc)
+
+    @staticmethod
+    def _items_for_keys(
+        required_ppe: list[RequiredPpeItem],
+        keys:         list[str],
+    ) -> list[RequiredPpeItem]:
+        """
+        Resolves a list of PPE item_key strings (as produced by the AI
+        layer) back into the rich :class:`RequiredPpeItem` instances
+        carried on :class:`WorkerInfo`.
+
+        Keys that do not correspond to a required PPE item are wrapped
+        in a synthetic item with ``id=-1`` so the display still receives
+        something renderable; this is a defensive measure against the
+        cross-module PPE-naming TODOs in ``models.py``.
+        """
+        by_key = {item.item_key: item for item in required_ppe}
+        out: list[RequiredPpeItem] = []
+        for key in keys:
+            item = by_key.get(key)
+            if item is None:
+                item = RequiredPpeItem(
+                    id=-1,
+                    item_key=key,
+                    display_name=key,
+                    icon_name=key,
+                )
+            out.append(item)
+        return out

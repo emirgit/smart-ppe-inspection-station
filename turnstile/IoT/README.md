@@ -130,7 +130,8 @@ client.log_entry(EntryLog(
 | `IDENTIFYING` | 1 | Card read; querying backend for worker info |
 | `INSPECTING` | 2 | Worker identified; running AI PPE detection |
 | `GRANTED` | 3 | All required PPE present; gate opening |
-| `DENIED` | 4 | Required PPE missing or card unknown; gate locked |
+| `DENIED` | 4 | Required PPE missing; gate locked |
+| `UNKNOWN_CARD` | 5 | RFID card not registered in backend (distinct from DENIED so MOD-05 can render its own screen) |
 
 #### `IoTConfig` Dataclass
 
@@ -138,9 +139,12 @@ client.log_entry(EntryLog(
 |---|---|---|
 | `backend_url` | `http://localhost:8000/api` | MOD-04 REST API base URL |
 | `display_url` | `http://localhost:3000` | MOD-05 display endpoint |
-| `denied_timeout_ms` | 5000 | Milliseconds before DENIED resets to IDLE |
+| `denied_timeout_ms` | 5000 | Milliseconds before DENIED / UNKNOWN_CARD resets to IDLE |
 | `frame_width` | 640 | Camera frame width passed to AI module |
 | `frame_height` | 640 | Camera frame height passed to AI module |
+| `display_ws_host` | `0.0.0.0` | Bind address for the MOD-05 display WebSocket bridge |
+| `display_ws_port` | 8080 | TCP port for the MOD-05 display WebSocket bridge |
+| `display_ws_path` | `/ws/display` | URL path the React display connects to |
 
 ---
 

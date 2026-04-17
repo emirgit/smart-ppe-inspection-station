@@ -1,0 +1,17 @@
+# MOD-03 IoT runtime dependencies.
+#
+# Hardware-specific packages (RPi.GPIO, picamera2, spidev, mfrc522) are
+# kept out of this file because they are platform-specific and pinned by
+# the Raspberry Pi image; install them with the system package manager.
+
+# HTTP client used by HttpBackendClient and the WiFi RfidReader.
+requests>=2.31,<3
+
+# Camera frame capture used by IoTOrchestrator._run_inspection.
+opencv-python>=4.8,<5
+
+# WebSocket bridge to MOD-05 turnstile display.
+# Pinned to the 12-14 series; the API surface used by
+# WebSocketDisplayNotifier (asyncio.server.serve / ServerConnection)
+# is stable across this range.
+websockets>=12,<15
