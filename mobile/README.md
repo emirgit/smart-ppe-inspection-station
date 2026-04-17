@@ -1,73 +1,129 @@
-# React + TypeScript + Vite
+# MOD-05 / mobile — Turnstile Display
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Tablet-side React application for the AI-Powered Smart PPE Inspection
+Station (CSE 396, Gebze Technical University, Spring 2026, GROUP-11).
 
-Currently, two official plugins are available:
+The display runs in a kiosk-mode browser at the turnstile gate. It
+consumes real-time `DisplayMessage` events pushed over WebSocket from
+the IoT module (MOD-03 / Raspberry Pi) and renders one of seven
+inspection screens. The display itself never calls the backend; all
+data originates from MOD-04 and is forwarded by MOD-03.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The published API contract for this module lives in
+`doc/module_05_ui_ux/module_05_ui_ux/mobile/include/display_interface.d.ts`
+and is mirrored in `src/interfaces/display_interface.ts`.
 
-## React Compiler
+## Tech stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- React 19 + TypeScript (Vite 6 build, Vitest 2 for tests)
+- Tailwind CSS 4 (via `@tailwindcss/vite`)
+- Native browser WebSocket API (no socket.io)
 
-## Expanding the ESLint configuration
+## Project layout
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+mobile/
+├── index.html
+├── public/                       static assets
+├── src/
+│   ├── App.tsx                   wires controller + ws/mock + screens
+│   ├── main.tsx                  React entry point
+│   ├── index.css                 Tailwind + custom keyframes
+│   ├── interfaces/
+│   │   └── display_interface.ts  IDisplayWSClient / IDisplayController
+│   ├── hooks/
+│   │   └── useDisplayController.ts
+│   ├── lib/
+│   │   ├── normalize.ts          payload normalization (C-04 / C-08)
+│   │   ├── WebSocketClient.ts    IDisplayWSClient implementation
+│   │   └── MockSimulator.ts      IMockEventSimulator implementation
+│   ├── components/
+│   │   ├── ConnectionBadge.tsx
+│   │   ├── MockControls.tsx
+│   │   ├── PpeList.tsx
+│   │   └── WorkerCard.tsx
+│   ├── screens/
+│   │   └── Screens.tsx           IDLE / IDENTIFYING / UNKNOWN_CARD /
+│   │                             INSPECTING / GRANTED / DENIED /
+│   │                             CONNECTION_ERROR
+│   └── __tests__/                SM-, SR-, WS- test suites
+├── .env.example
+├── eslint.config.js
+├── vite.config.ts
+├── vitest.config.ts
+├── tsconfig*.json
+└── package.json
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Local development
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```powershell
+npm install
+copy .env.example .env.local       # then edit VITE_WS_URL / VITE_CLIENT_ID
+npm run dev                        # http://localhost:5173
 ```
+
+To run without the Raspberry Pi available, enable mock mode either by
+setting `VITE_MOCK_MODE=true` in `.env.local` or by visiting the page
+with `?mock=1`. In mock mode the WebSocket connection is not opened and
+three scenario buttons appear in the lower-left corner driving the
+state machine through PASS, FAIL, and UNKNOWN_CARD flows.
+
+## Scripts
+
+| Script                | Purpose                                                 |
+|-----------------------|---------------------------------------------------------|
+| `npm run dev`         | Start Vite dev server (HMR, accessible on LAN)          |
+| `npm run build`       | Type-check then build the production bundle to `dist/`  |
+| `npm run preview`     | Serve the production bundle locally                     |
+| `npm run lint`        | ESLint over `src/` and config files                     |
+| `npm run typecheck`   | `tsc -b --noEmit` for both app and node tsconfigs       |
+| `npm run test`        | Vitest in watch mode                                    |
+| `npm run test:run`    | Single-shot test run, used in CI                        |
+
+## Environment variables
+
+All variables are read by Vite, so they must be prefixed with `VITE_`.
+
+| Variable           | Description                                                | Example                                |
+|--------------------|------------------------------------------------------------|----------------------------------------|
+| `VITE_WS_URL`      | Full WebSocket URL exposed by MOD-03                       | `ws://192.168.1.100:8080/ws/display`   |
+| `VITE_CLIENT_ID`   | Identifier sent in the `DISPLAY_READY` handshake           | `turnstile-display-01`                 |
+| `VITE_MOCK_MODE`   | When `true`, skip the WebSocket and run MockSimulator      | `true`                                 |
+
+The URL parameter `?mock=1` overrides `VITE_MOCK_MODE` at runtime, which is convenient for demos.
+
+## State machine
+
+The state machine lives in `useDisplayController` and follows the
+diagram in `doc/knowledge.md`. The hook owns the active state, the
+last `DisplayMessage`, the connection status, and the auto-return
+timer that brings the screen back to IDLE after a terminal state.
+Auto-return durations come from the public interface constants:
+`DISPLAY_PASS_TIMEOUT_MS`, `DISPLAY_FAIL_TIMEOUT_MS`, and
+`DISPLAY_UNKNOWN_CARD_TIMEOUT_MS`.
+
+## Defensive normalization
+
+`src/lib/normalize.ts` cushions three documented integration mismatches
+(see `doc/compatibility.md`):
+
+- **C-08** — Accepts both MOD-03 names (`GRANTED`/`DENIED`) and the MOD-04 names (`PASS`/`FAIL`) and folds them into the `DisplayState` enum.
+- **C-04 / C-07** — Accepts PPE arrays as either `string[]` or rich `RequiredPpeItem[]` and emits the rich form for downstream rendering.
+- **C-04** — Accepts a flat `worker_name`/`role` payload as a fallback when the rich `worker` object is missing.
+
+Unknown states or non-object payloads are dropped with a `console.warn`,
+so a malformed frame from MOD-03 cannot crash the display.
+
+## Testing
+
+The test suite mirrors the matrix in `doc/knowledge.md`:
+
+| Group | Test IDs        | File                                          |
+|-------|-----------------|-----------------------------------------------|
+| State | SM-01 .. SM-10  | `src/__tests__/useDisplayController.test.ts`  |
+| Screens | SR-01 .. SR-06 | `src/__tests__/screens.test.tsx`              |
+| WebSocket | WS-01 .. WS-04 | `src/__tests__/WebSocketClient.test.ts`     |
+| Mock E2E | (App scenarios) | `src/__tests__/MockSimulator.test.tsx`     |
+
+Run them all with `npm run test:run`.

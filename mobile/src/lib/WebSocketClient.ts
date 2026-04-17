@@ -1,12 +1,22 @@
+/**
+ * @file    WebSocketClient.ts
+ * @brief   IDisplayWSClient implementation backed by the browser
+ *          native WebSocket API.
+ *
+ * Manages connection lifecycle, automatic reconnection with bounded
+ * attempts, DISPLAY_READY handshake, and DISPLAY_ACK forwarding.
+ */
 import {
-  DisplayWSConfig,
-  IDisplayWSClient,
-  OnDisplayMessageCallback,
-  OnConnectionStatusCallback,
   ConnectionStatus,
+  DISPLAY_MAX_RECONNECT_ATTEMPTS,
+  DISPLAY_RECONNECT_INTERVAL_MS,
   DisplayState,
-  DisplayMessage,
-} from "../interfaces/display_interface";
+  type DisplayWSConfig,
+  type IDisplayWSClient,
+  type OnConnectionStatusCallback,
+  type OnDisplayMessageCallback,
+} from '../interfaces/display_interface';
+import { normalizeMessage } from './normalize';
 
 export class WebSocketClient implements IDisplayWSClient {
   private ws: WebSocket | null = null;
@@ -15,76 +25,102 @@ export class WebSocketClient implements IDisplayWSClient {
   private onMessageCb: OnDisplayMessageCallback | null = null;
   private onStatusCb: OnConnectionStatusCallback | null = null;
   private reconnectAttempts = 0;
-  private reconnectTimeout: number | undefined = undefined;
+  private reconnectTimeout: number | null = null;
+  private intentionalClose = false;
 
   connect(config: DisplayWSConfig): void {
     this.config = config;
-    this.attemptConnection();
+    this.intentionalClose = false;
+    this.reconnectAttempts = 0;
+    this.openSocket();
   }
 
-  private attemptConnection() {
-    if (!this.config || this.reconnectAttempts >= (this.config.max_reconnect_attempts || 5)) {
+  private openSocket(): void {
+    if (!this.config) return;
+
+    this.updateStatus(ConnectionStatus.CONNECTING);
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(this.config.server_url);
+    } catch (err) {
+      console.warn('[ws] Failed to construct WebSocket', err);
+      this.scheduleReconnect();
+      return;
+    }
+    this.ws = socket;
+
+    socket.onopen = () => {
+      this.reconnectAttempts = 0;
+      this.updateStatus(ConnectionStatus.CONNECTED);
+      const readyMsg = {
+        type: 'DISPLAY_READY' as const,
+        client_id: this.config?.client_id ?? 'turnstile-display-01',
+        timestamp: new Date().toISOString(),
+      };
+      this.safeSend(JSON.stringify(readyMsg));
+    };
+
+    socket.onmessage = (event) => {
+      let payload: unknown;
+      try {
+        payload = JSON.parse(typeof event.data === 'string' ? event.data : '');
+      } catch (err) {
+        console.warn('[ws] Dropping malformed JSON frame:', err);
+        return;
+      }
+      const normalized = normalizeMessage(payload);
+      if (normalized && this.onMessageCb) {
+        this.onMessageCb(normalized);
+      }
+    };
+
+    socket.onclose = () => {
+      this.ws = null;
+      if (this.intentionalClose) {
+        this.updateStatus(ConnectionStatus.DISCONNECTED);
+        return;
+      }
+      this.scheduleReconnect();
+    };
+
+    socket.onerror = (event) => {
+      console.warn('[ws] socket error', event);
+    };
+  }
+
+  private scheduleReconnect(): void {
+    const maxAttempts =
+      this.config?.max_reconnect_attempts ?? DISPLAY_MAX_RECONNECT_ATTEMPTS;
+    if (this.reconnectAttempts >= maxAttempts) {
       this.updateStatus(ConnectionStatus.FAILED);
       return;
     }
+    this.reconnectAttempts += 1;
+    this.updateStatus(ConnectionStatus.RECONNECTING);
 
-    this.updateStatus(ConnectionStatus.CONNECTING);
-    try {
-      this.ws = new WebSocket(this.config.server_url);
-
-      this.ws.onopen = () => {
-        this.updateStatus(ConnectionStatus.CONNECTED);
-        this.reconnectAttempts = 0;
-        
-        const readyMsg = {
-          type: "DISPLAY_READY",
-          client_id: this.config?.client_id || "mobile-display",
-          timestamp: new Date().toISOString()
-        };
-        this.ws?.send(JSON.stringify(readyMsg));
-      };
-
-      this.ws.onmessage = (event) => {
-        try {
-          const msg: DisplayMessage = JSON.parse(event.data);
-          if (this.onMessageCb) {
-            this.onMessageCb(msg);
-          }
-        } catch (e) {
-          console.error("Failed to parse websocket message", e);
-        }
-      };
-
-      this.ws.onclose = () => {
-        this.updateStatus(ConnectionStatus.DISCONNECTED);
-        this.scheduleReconnect();
-      };
-
-      this.ws.onerror = () => {
-        this.updateStatus(ConnectionStatus.FAILED);
-      };
-    } catch (err) {
-      this.updateStatus(ConnectionStatus.FAILED);
-      this.scheduleReconnect();
-    }
-  }
-
-  private scheduleReconnect() {
-    if (this.reconnectAttempts < (this.config?.max_reconnect_attempts || 5)) {
-      this.reconnectAttempts++;
-      this.updateStatus(ConnectionStatus.RECONNECTING);
+    if (this.reconnectTimeout !== null) {
       clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = window.setTimeout(
-        () => this.attemptConnection(),
-        this.config?.reconnect_interval_ms || 3000
-      );
     }
+    const interval =
+      this.config?.reconnect_interval_ms ?? DISPLAY_RECONNECT_INTERVAL_MS;
+    this.reconnectTimeout = window.setTimeout(() => {
+      this.reconnectTimeout = null;
+      this.openSocket();
+    }, interval);
   }
 
   disconnect(): void {
-    clearTimeout(this.reconnectTimeout);
+    this.intentionalClose = true;
+    if (this.reconnectTimeout !== null) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
     if (this.ws) {
-      this.ws.close();
+      try {
+        this.ws.close();
+      } catch (err) {
+        console.warn('[ws] error closing socket', err);
+      }
       this.ws = null;
     }
     this.updateStatus(ConnectionStatus.DISCONNECTED);
@@ -96,27 +132,35 @@ export class WebSocketClient implements IDisplayWSClient {
 
   onConnectionStatus(callback: OnConnectionStatusCallback): void {
     this.onStatusCb = callback;
+    callback(this.status);
   }
 
   sendAck(state: DisplayState): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const ackMsg = {
-        type: "DISPLAY_ACK",
-        acknowledged_state: state,
-        timestamp: new Date().toISOString()
-      };
-      this.ws.send(JSON.stringify(ackMsg));
-    }
+    const ackMsg = {
+      type: 'DISPLAY_ACK' as const,
+      acknowledged_state: state,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeSend(JSON.stringify(ackMsg));
   }
 
   getStatus(): ConnectionStatus {
     return this.status;
   }
 
-  private updateStatus(status: ConnectionStatus) {
-    this.status = status;
-    if (this.onStatusCb) {
-      this.onStatusCb(status);
+  private safeSend(payload: string): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(payload);
+      } catch (err) {
+        console.warn('[ws] send failed', err);
+      }
     }
+  }
+
+  private updateStatus(status: ConnectionStatus): void {
+    if (this.status === status) return;
+    this.status = status;
+    this.onStatusCb?.(status);
   }
 }
