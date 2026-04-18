@@ -33,15 +33,19 @@ import time
 from typing import Optional
 
 import requests
+from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
+from urllib3.util.retry import Retry
 
-from ..include.backend_client import BackendClient
-from ..include.models import WorkerInfo, EntryLog, RequiredPpeItem
+from src.iot_core.interfaces.backend_client import BackendClient
+from src.iot_core.models import WorkerInfo, EntryLog, RequiredPpeItem
 
 logger = logging.getLogger(__name__)
 
 # Default HTTP request timeout (seconds)
 _REQUEST_TIMEOUT_S: int = 5
+_MAX_RETRIES: int = 3
+_BACKOFF_FACTOR: float = 0.5
 
 
 class HttpBackendClient(BackendClient):
@@ -56,6 +60,18 @@ class HttpBackendClient(BackendClient):
     def __init__(self, base_url: str = "http://localhost:8000/api") -> None:
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
+        
+        # Configure robust HTTP retry logic for network drops & 5xx errors
+        retry_strategy = Retry(
+            total=_MAX_RETRIES,
+            backoff_factor=_BACKOFF_FACTOR,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST", "PUT", "DELETE"]  # Ensure POST requests are retried
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
+
         self._session.headers.update({"Content-Type": "application/json"})
 
     # -------------------------------------------------------------------------
@@ -181,7 +197,9 @@ class HttpBackendClient(BackendClient):
             "worker_id":          log.worker_id,
             "rfid_uid_scanned":   log.card_id,
             "result":             log.decision.name,
-            "inspection_time_ms": log.timestamp_ms or int(time.time() * 1000),
+            # MOD-04 Schema constraint: inspection_time_ms is mapped to INT4 in Prisma.
+            # Using seconds instead of milliseconds prevents integer overflow (500 Error).
+            "inspection_time_ms": int(time.time()),
             "camera_snapshot_url": None,
             "detections": [
                 {

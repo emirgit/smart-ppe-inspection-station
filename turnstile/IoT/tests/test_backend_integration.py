@@ -6,8 +6,8 @@ import pytest
 import time
 import os
 import requests
-from turnstile.IoT.impl.http_backend_client import HttpBackendClient
-from turnstile.IoT.include.models import EntryLog, AccessDecision, DetectionItem
+from src.iot_core.api_clients.http_backend_client import HttpBackendClient
+from src.iot_core.models import EntryLog, AccessDecision, DetectionItem
 
 # Gerçek backend adresi
 LIVE_API_URL = "https://turnstile-backend-04e771aad5b6.herokuapp.com/api"
@@ -37,7 +37,7 @@ def test_live_get_worker_not_found(live_client):
     Geçersiz bir RFID taranırsa live backend'in beklenen 404/None
     döndürüp döndürmediği kontrol edilir.
     """
-    worker = live_client.get_worker("XXX_INVALID_CARD_UYXZ")
+    worker = live_client.get_worker("A1B2C3D4")
     assert worker is None
 
 def test_live_log_entry_unknown_card(live_client):
@@ -46,7 +46,7 @@ def test_live_log_entry_unknown_card(live_client):
     live API bunu HTTP 201 Created veya benzer bir 200 status kodu ile başarılı alır mı?
     """
     log = EntryLog(
-        card_id="XXX_INVALID_CARD_UYXZ",
+        card_id="A1B2C3D4",
         worker_id=None,
         decision=AccessDecision.UNKNOWN_CARD,
         detected_ppe=[],

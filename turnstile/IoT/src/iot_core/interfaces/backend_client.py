@@ -25,7 +25,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from .models import WorkerInfo, EntryLog
+from src.iot_core.models import WorkerInfo, EntryLog
 
 
 # =============================================================================

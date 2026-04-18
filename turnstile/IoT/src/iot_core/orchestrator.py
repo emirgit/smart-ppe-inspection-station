@@ -42,12 +42,12 @@ from typing import Optional, TYPE_CHECKING
 
 import cv2
 
-from ..include.iot_module    import IoTModule, IoTConfig, SystemState
-from ..include.rfid_reader   import RfidReader
-from ..include.backend_client import BackendClient
-from ..include.display_client import DisplayClient
-from ..include.models        import EntryLog, AccessDecision, WorkerInfo, DetectionItem
-from .gate_control           import GateController
+from src.iot_core.interfaces.iot_module import IoTModule, IoTConfig, SystemState
+from src.iot_core.interfaces.rfid_reader import RfidReader
+from src.iot_core.interfaces.backend_client import BackendClient
+from src.iot_core.interfaces.display_client import DisplayClient
+from src.iot_core.models import EntryLog, AccessDecision, WorkerInfo, DetectionItem
+from src.iot_core.hardware.gate_control           import GateController
 
 if TYPE_CHECKING:
     # Imported only for type hints; avoids hard dependency at module load time.

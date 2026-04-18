@@ -4,8 +4,8 @@ Test suite for HttpBackendClient.
 import pytest
 from unittest.mock import patch, MagicMock
 
-from turnstile.IoT.impl.http_backend_client import HttpBackendClient
-from turnstile.IoT.include.models import EntryLog, AccessDecision
+from src.iot_core.api_clients.http_backend_client import HttpBackendClient
+from src.iot_core.models import EntryLog, AccessDecision
 
 @patch("requests.Session.get")
 def test_get_worker_success(mock_get):
