@@ -1,0 +1,101 @@
+// Turnstile Backend - Prisma Schema
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────
+
+enum EntryResult {
+  PASS
+  FAIL
+  UNKNOWN_CARD
+}
+
+// ─── Models ─────────────────────────────────────────────
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  roleName    String   @unique @db.VarChar(50) @map("role_name")
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workers             Worker[]
+  rolePpeRequirements RolePpeRequirement[]
+
+  @@map("roles")
+}
+
+model Worker {
+  id          Int      @id @default(autoincrement())
+  fullName    String   @db.VarChar(100) @map("full_name")
+  rfidCardUid String   @unique @db.VarChar(20) @map("rfid_card_uid")
+  roleId      Int      @map("role_id")
+  isActive    Boolean  @default(true) @map("is_active")
+  photoUrl    String?  @db.VarChar(255) @map("photo_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  role      Role       @relation(fields: [roleId], references: [id])
+  entryLogs EntryLog[]
+
+  @@map("workers")
+}
+
+model PpeItem {
+  id          Int     @id @default(autoincrement())
+  itemKey     String  @unique @db.VarChar(30) @map("item_key")
+  displayName String  @db.VarChar(50) @map("display_name")
+  iconName    String? @db.VarChar(30) @map("icon_name")
+
+  rolePpeRequirements RolePpeRequirement[]
+  detectionDetails    DetectionDetail[]
+
+  @@map("ppe_items")
+}
+
+model RolePpeRequirement {
+  roleId    Int @map("role_id")
+  ppeItemId Int @map("ppe_item_id")
+
+  role    Role    @relation(fields: [roleId], references: [id])
+  ppeItem PpeItem @relation(fields: [ppeItemId], references: [id])
+
+  @@id([roleId, ppeItemId])
+  @@map("role_ppe_requirements")
+}
+
+model EntryLog {
+  id                Int         @id @default(autoincrement())
+  workerId          Int?        @map("worker_id")
+  rfidUidScanned    String      @db.VarChar(20) @map("rfid_uid_scanned")
+  result            EntryResult
+  scannedAt         DateTime    @default(now()) @map("scanned_at")
+  inspectionTimeMs  Int?        @map("inspection_time_ms")
+  cameraSnapshotUrl String?     @db.VarChar(255) @map("camera_snapshot_url")
+
+  worker           Worker?           @relation(fields: [workerId], references: [id])
+  detectionDetails DetectionDetail[]
+
+  @@map("entry_logs")
+}
+
+model DetectionDetail {
+  id          Int     @id @default(autoincrement())
+  entryLogId  Int     @map("entry_log_id")
+  ppeItemId   Int     @map("ppe_item_id")
+  wasRequired Boolean @map("was_required")
+  wasDetected Boolean @map("was_detected")
+  confidence  Float?
+
+  entryLog EntryLog @relation(fields: [entryLogId], references: [id])
+  ppeItem  PpeItem  @relation(fields: [ppeItemId], references: [id])
+
+  @@map("detection_details")
+}
