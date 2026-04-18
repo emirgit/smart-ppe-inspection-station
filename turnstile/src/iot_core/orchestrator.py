@@ -38,7 +38,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 import cv2
 
@@ -49,10 +49,7 @@ from src.iot_core.interfaces.display_client import DisplayClient
 from src.iot_core.models import EntryLog, AccessDecision, WorkerInfo, DetectionItem
 from src.iot_core.hardware.gate_control           import GateController
 
-if TYPE_CHECKING:
-    # Imported only for type hints; avoids hard dependency at module load time.
-    # The real import is done dynamically inside _init_ai().
-    from app.include.ai_vision_module import AIVisionModule  # type: ignore
+from ai_vision.include.module_ai_vision import AIVisionModule, CameraFrame, PPEClass
 
 logger = logging.getLogger(__name__)
 
@@ -279,30 +276,31 @@ class IoTOrchestrator(IoTModule):
             logger.error("_run_inspection: camera not available")
             return []
 
-        ret, frame = self._cap.read()
-        if not ret or frame is None:
+        ret, raw_frame = self._cap.read()
+        if not ret or raw_frame is None:
             logger.error("_run_inspection: failed to capture frame from camera")
             return []
 
         try:
-            result = self._ai.detect(frame)
+            rgb = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2RGB)
+            camera_frame = CameraFrame(
+                data=rgb.tobytes(),
+                width=rgb.shape[1],
+                height=rgb.shape[0],
+                timestamp_ms=self._now_ms(),
+            )
 
-            # ──────────────────────────────────────────────────────────────
-            # TODO — VERIFY WITH MOD-01 TEAM (Zeynep)
-            # DetectionResult field name for the detected PPE class labels
-            # is not yet confirmed.  Adjust the attribute access below once
-            # MOD-01 publishes their DetectionResult definition.
-            #
-            # Expected: result gives a list[str] of PPE item_key values
-            # that match those returned by MOD-04 (e.g. "HELMET", "VEST").
-            #
-            # Candidate attributes to try (pick the correct one):
-            #   result.labels
-            #   result.detected_labels
-            #   result.detected_classes
-            #   [item.label for item in result.detections]
-            # ──────────────────────────────────────────────────────────────
-            detected_ppe: list[str] = result.labels   # ← CHANGE IF NEEDED
+            result = self._ai.detect(camera_frame)
+            if not result.success:
+                logger.error("_run_inspection: AI returned failure result")
+                return []
+
+            # Extract only positive PPE classes (0–4: HELMET, GLOVES, VEST, BOOTS, GOGGLES)
+            detected_ppe: list[str] = [
+                item.ppe_class.name
+                for item in result.items
+                if item.ppe_class.value < PPEClass.PERSON.value
+            ]
 
             logger.info("_run_inspection: AI detected — %s", detected_ppe)
             return detected_ppe

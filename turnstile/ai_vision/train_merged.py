@@ -1,24 +1,24 @@
 """
 train_merged.py
 ===============
-PPe detection model eğitimini hızlandırmak için Google Colab'da çalıştırılacak bir script.
-Eğitim tamamlandıktan sonra best.onnx dosyasını indirip Raspberry Pi'ya
-PPE detection modelini Google Colab'da eğitmek için kullanılır.
-PC'de veya Raspberry Pi'da çalıştırılmaz.
+Google Colab training script for the PPE detection model.
+Run this notebook on Colab to train the model, then download best.pt and
+best.onnx and place them in the model/ directory on the Raspberry Pi.
+Do NOT run this script on a PC or Raspberry Pi.
 
-Kullanım:
-    Google Colab'da her hücreyi sırayla çalıştır.
+Usage:
+    Run each cell in order on Google Colab.
 """
 
 from google.colab import drive
 from ultralytics import YOLO
 
-# 1. Drive'ı bağla ve dataseti kopyala
+# 1. Mount Drive and copy dataset
 """ drive.mount('/content/drive')
 !cp -r /content/drive/MyDrive/merged /content/merged
 !sed -i 's|path:.*|path: /content/merged|' /content/merged/data.yaml """
 
-# 2. Modeli eğit
+# 2. Train model
 model = YOLO("yolov8n.pt")
 model.train(
     data="/content/merged/data.yaml",
@@ -26,14 +26,14 @@ model.train(
     imgsz=640,
     batch=16,
     name="ppe_merged",
-    project="/content/drive/MyDrive/runs"  # Drive'a kaydeder, runtime kapanınca kaybolmaz
+    project="/content/drive/MyDrive/runs"  # saved to Drive so it persists after runtime ends
 )
 
-# 3. Eğitim bittikten sonra modeli indir
+# 3. Download trained model weights
 from google.colab import files
 files.download('/content/drive/MyDrive/runs/ppe_merged/weights/best.pt')
 
-# 4. ONNX export et ve indir
+# 4. Export to ONNX and download
 model = YOLO('/content/drive/MyDrive/runs/ppe_merged/weights/best.pt')
 model.export(format='onnx', imgsz=640)
 files.download('/content/drive/MyDrive/runs/ppe_merged/weights/best.onnx')

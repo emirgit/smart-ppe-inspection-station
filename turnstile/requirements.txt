@@ -10,5 +10,9 @@ websocket-client
 # Computer vision
 opencv-python
 
+# AI inference
+onnxruntime
+numpy
+
 # Testing
 pytest
