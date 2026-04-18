@@ -1,2 +1,14 @@
 # Adafruit ServoKit - high-level servo control via PCA9685
 adafruit-circuitpython-servokit
+
+# HTTP communication with backend
+requests
+
+# WebSocket client for display communication
+websocket-client
+
+# Computer vision
+opencv-python
+
+# Testing
+pytest
