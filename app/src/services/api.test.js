@@ -1,209 +1,202 @@
 /**
  * @file    api.test.js
- * @brief   Unit tests for the Admin Panel API service (MOD-05)
+ * @brief   Unit tests for the Admin Panel API service (MOD-05 v2.0)
  * @author  Tarık Saeede (200104004804)
+ *
+ * Tests run against the mock API. Same tests will work against the real
+ * backend once VITE_USE_MOCK is set to false in settings.
  */
 
-import { describe, it, expect } from 'vitest';
-import { api } from './api';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { api, ApiError } from './api';
+import { updateSettings } from '@/lib/settings';
 
-describe('API Service — Workers', () => {
-  it('should return an array of workers', async () => {
-    const workers = await api.getWorkers();
-    expect(Array.isArray(workers)).toBe(true);
-    expect(workers.length).toBeGreaterThan(0);
+beforeEach(() => {
+  updateSettings({ useMock: true });
+});
+
+describe('API — Workers', () => {
+  it('lists workers', async () => {
+    const res = await api.listWorkers();
+    expect(res.success).toBe(true);
+    expect(Array.isArray(res.data)).toBe(true);
+    expect(res.total).toBeGreaterThan(0);
   });
 
-  it('each worker should have required fields', async () => {
-    const workers = await api.getWorkers();
-    const worker = workers[0];
-    expect(worker).toHaveProperty('id');
-    expect(worker).toHaveProperty('fullName');
-    expect(worker).toHaveProperty('rfidCardUid');
-    expect(worker).toHaveProperty('roleId');
-    expect(worker).toHaveProperty('roleName');
-    expect(worker).toHaveProperty('isActive');
-    expect(worker).toHaveProperty('createdAt');
+  it('each worker has the contract fields', async () => {
+    const res = await api.listWorkers();
+    const w = res.data[0];
+    expect(w).toHaveProperty('id');
+    expect(w).toHaveProperty('full_name');
+    expect(w).toHaveProperty('rfid_card_uid');
+    expect(w).toHaveProperty('role_id');
+    expect(w).toHaveProperty('role_name');
+    expect(w).toHaveProperty('is_active');
   });
 
-  it('should return a specific worker by ID', async () => {
-    const worker = await api.getWorker(1);
-    expect(worker).not.toBeNull();
-    expect(worker.id).toBe(1);
-    expect(typeof worker.fullName).toBe('string');
+  it('filters workers by is_active', async () => {
+    const active = await api.listWorkers({ is_active: true });
+    const inactive = await api.listWorkers({ is_active: false });
+    active.data.forEach(w => expect(w.is_active).toBe(true));
+    inactive.data.forEach(w => expect(w.is_active).toBe(false));
   });
 
-  it('should return null for non-existent worker ID', async () => {
-    const worker = await api.getWorker(9999);
-    expect(worker).toBeNull();
+  it('gets a worker by ID', async () => {
+    const res = await api.getWorkerById(1);
+    expect(res.data.id).toBe(1);
   });
 
-  it('should create a new worker with valid data', async () => {
-    const newWorker = await api.createWorker({
-      fullName: 'Test Worker',
-      rfidCardUid: 'TEST1234',
-      roleId: 1,
+  it('throws 404 for non-existent worker', async () => {
+    await expect(api.getWorkerById(99999)).rejects.toThrow(ApiError);
+  });
+
+  it('creates a new worker', async () => {
+    const res = await api.createWorker({
+      full_name: 'Test Worker',
+      rfid_card_uid: 'TEST0001',
+      role_id: 1,
     });
-    expect(newWorker).toHaveProperty('id');
-    expect(newWorker.fullName).toBe('Test Worker');
-    expect(newWorker.rfidCardUid).toBe('TEST1234');
-    expect(newWorker.roleId).toBe(1);
-    expect(newWorker.isActive).toBe(true);
+    expect(res.success).toBe(true);
+    expect(res.data.full_name).toBe('Test Worker');
+    expect(res.data.is_active).toBe(true);
   });
 
-  it('should soft-delete a worker (set isActive to false)', async () => {
-    const result = await api.deleteWorker(1);
-    expect(result.success).toBe(true);
-    const workers = await api.getWorkers();
-    const deleted = workers.find(w => w.id === 1);
-    expect(deleted.isActive).toBe(false);
+  it('rejects duplicate RFID UID', async () => {
+    await api.createWorker({ full_name: 'A', rfid_card_uid: 'DUP0001', role_id: 1 });
+    await expect(
+      api.createWorker({ full_name: 'B', rfid_card_uid: 'DUP0001', role_id: 1 })
+    ).rejects.toThrow();
+  });
+
+  it('soft-deletes a worker', async () => {
+    const created = await api.createWorker({ full_name: 'Del', rfid_card_uid: 'DEL0001', role_id: 1 });
+    await api.softDeleteWorker(created.data.id);
+    const res = await api.getWorkerById(created.data.id);
+    expect(res.data.is_active).toBe(false);
+  });
+
+  it('looks up worker by RFID card with required PPE', async () => {
+    const res = await api.lookupWorkerByCard('A1B2C3D4');
+    expect(res.data.worker.full_name).toBe('Ahmet Yılmaz');
+    expect(Array.isArray(res.data.required_ppe)).toBe(true);
+    res.data.required_ppe.forEach(item => {
+      expect(item).toHaveProperty('id');
+      expect(item).toHaveProperty('item_key');
+      expect(item).toHaveProperty('display_name');
+    });
   });
 });
 
-describe('API Service — Roles', () => {
-  it('should return an array of roles', async () => {
-    const roles = await api.getRoles();
-    expect(Array.isArray(roles)).toBe(true);
-    expect(roles.length).toBeGreaterThan(0);
-  });
-
-  it('each role should have id, roleName, and requiredPpe', async () => {
-    const roles = await api.getRoles();
-    const role = roles[0];
-    expect(role).toHaveProperty('id');
-    expect(role).toHaveProperty('roleName');
-    expect(role).toHaveProperty('requiredPpe');
-    expect(Array.isArray(role.requiredPpe)).toBe(true);
-  });
-
-  it('different roles should require different PPE sets', async () => {
-    const roles = await api.getRoles();
-    const constructionWorker = roles.find(r => r.roleName === 'Construction Worker');
-    const visitor = roles.find(r => r.roleName === 'Visitor');
-    expect(constructionWorker.requiredPpe.length).toBeGreaterThan(visitor.requiredPpe.length);
-  });
-});
-
-describe('API Service — PPE Items', () => {
-  it('should return all PPE item types', async () => {
-    const items = await api.getPpeItems();
-    expect(Array.isArray(items)).toBe(true);
-    expect(items.length).toBeGreaterThanOrEqual(5);
-  });
-
-  it('each PPE item should have itemKey and displayName', async () => {
-    const items = await api.getPpeItems();
-    items.forEach(item => {
-      expect(item).toHaveProperty('itemKey');
-      expect(item).toHaveProperty('displayName');
-      expect(typeof item.itemKey).toBe('string');
-      expect(typeof item.displayName).toBe('string');
+describe('API — Roles', () => {
+  it('lists roles with PPE items and worker count', async () => {
+    const res = await api.listRoles();
+    expect(res.success).toBe(true);
+    res.data.forEach(r => {
+      expect(r).toHaveProperty('role_name');
+      expect(r).toHaveProperty('ppe_items');
+      expect(r).toHaveProperty('worker_count');
     });
   });
 
-  it('should include core PPE items (hard_hat, safety_vest, gloves)', async () => {
-    const items = await api.getPpeItems();
-    const keys = items.map(i => i.itemKey);
+  it('creates a new role', async () => {
+    const res = await api.createRole({ role_name: 'Test Role X', description: 'desc' });
+    expect(res.data.role_name).toBe('Test Role X');
+  });
+
+  it('replaces PPE requirements', async () => {
+    const res = await api.replaceRolePpe(1, { ppe_item_ids: [1, 2] });
+    expect(res.data.ppe_items.length).toBe(2);
+  });
+
+  it('cannot delete role with active workers', async () => {
+    await expect(api.deleteRole(1)).rejects.toThrow(/active worker/i);
+  });
+});
+
+describe('API — PPE Items', () => {
+  it('lists all PPE items', async () => {
+    const res = await api.listPpeItems();
+    expect(res.data.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('each PPE item has required fields', async () => {
+    const res = await api.listPpeItems();
+    res.data.forEach(p => {
+      expect(p).toHaveProperty('id');
+      expect(p).toHaveProperty('item_key');
+      expect(p).toHaveProperty('display_name');
+    });
+  });
+
+  it('includes core PPE keys', async () => {
+    const res = await api.listPpeItems();
+    const keys = res.data.map(p => p.item_key);
     expect(keys).toContain('hard_hat');
     expect(keys).toContain('safety_vest');
     expect(keys).toContain('gloves');
   });
 });
 
-describe('API Service — Entry Logs', () => {
-  it('should return entry logs sorted by date (newest first)', async () => {
-    const logs = await api.getEntryLogs();
-    expect(Array.isArray(logs)).toBe(true);
-    expect(logs.length).toBeGreaterThan(0);
-    for (let i = 1; i < logs.length; i++) {
-      const prev = new Date(logs[i - 1].scannedAt);
-      const curr = new Date(logs[i].scannedAt);
+describe('API — Entry Logs', () => {
+  it('lists logs sorted newest first', async () => {
+    const res = await api.listEntryLogs();
+    for (let i = 1; i < res.data.length; i++) {
+      const prev = new Date(res.data[i - 1].scanned_at);
+      const curr = new Date(res.data[i].scanned_at);
       expect(prev.getTime()).toBeGreaterThanOrEqual(curr.getTime());
     }
   });
 
-  it('should filter logs by result', async () => {
-    const failLogs = await api.getEntryLogs({ result: 'FAIL' });
-    failLogs.forEach(log => {
-      expect(log.result).toBe('FAIL');
-    });
-    const passLogs = await api.getEntryLogs({ result: 'PASS' });
-    passLogs.forEach(log => {
-      expect(log.result).toBe('PASS');
-    });
+  it('filters logs by result', async () => {
+    const res = await api.listEntryLogs({ result: 'FAIL' });
+    res.data.forEach(l => expect(l.result).toBe('FAIL'));
   });
 
-  it('should filter logs by search term', async () => {
-    const logs = await api.getEntryLogs({ search: 'Ahmet' });
-    logs.forEach(log => {
-      expect(log.workerName?.toLowerCase()).toContain('ahmet');
-    });
+  it('paginates with limit and offset', async () => {
+    const page1 = await api.listEntryLogs({ limit: 5, offset: 0 });
+    const page2 = await api.listEntryLogs({ limit: 5, offset: 5 });
+    expect(page1.data.length).toBeLessThanOrEqual(5);
+    expect(page1.data[0].id).not.toBe(page2.data[0]?.id);
   });
 
-  it('entry log should contain required fields', async () => {
-    const logs = await api.getEntryLogs();
-    const log = logs[0];
-    expect(log).toHaveProperty('id');
-    expect(log).toHaveProperty('rfidUid');
-    expect(log).toHaveProperty('result');
-    expect(log).toHaveProperty('scannedAt');
-    expect(['PASS', 'FAIL', 'UNKNOWN_CARD']).toContain(log.result);
-  });
-
-  it('FAIL logs should have missingItems array', async () => {
-    const logs = await api.getEntryLogs({ result: 'FAIL' });
-    logs.forEach(log => {
-      expect(Array.isArray(log.missingItems)).toBe(true);
-      expect(log.missingItems.length).toBeGreaterThan(0);
+  it('FAIL logs include missing_ppe', async () => {
+    const res = await api.listEntryLogs({ result: 'FAIL' });
+    res.data.forEach(l => {
+      expect(Array.isArray(l.missing_ppe)).toBe(true);
+      expect(l.missing_ppe.length).toBeGreaterThan(0);
     });
   });
 });
 
-describe('API Service — Dashboard Stats', () => {
-  it('should return statistics with all required fields', async () => {
-    const stats = await api.getStats();
-    expect(stats).toHaveProperty('totalWorkers');
-    expect(stats).toHaveProperty('todayScans');
-    expect(stats).toHaveProperty('complianceRate');
-    expect(stats).toHaveProperty('totalScans');
-    expect(stats).toHaveProperty('passed');
-    expect(stats).toHaveProperty('failed');
-    expect(stats).toHaveProperty('mostMissed');
-    expect(stats).toHaveProperty('dailyData');
-    expect(stats).toHaveProperty('recentLogs');
+describe('API — Stats', () => {
+  it('returns all required stat fields', async () => {
+    const res = await api.getEntryLogStats();
+    const s = res.data;
+    expect(s).toHaveProperty('total_scans');
+    expect(s).toHaveProperty('passed');
+    expect(s).toHaveProperty('failed');
+    expect(s).toHaveProperty('compliance_rate');
+    expect(s).toHaveProperty('most_missed_ppe');
+    expect(s).toHaveProperty('daily_data');
+    expect(s).toHaveProperty('period');
   });
 
-  it('compliance rate should be between 0 and 100', async () => {
-    const stats = await api.getStats();
-    expect(stats.complianceRate).toBeGreaterThanOrEqual(0);
-    expect(stats.complianceRate).toBeLessThanOrEqual(100);
+  it('compliance rate is between 0 and 100', async () => {
+    const res = await api.getEntryLogStats();
+    expect(res.data.compliance_rate).toBeGreaterThanOrEqual(0);
+    expect(res.data.compliance_rate).toBeLessThanOrEqual(100);
   });
 
-  it('passed + failed should be <= totalScans', async () => {
-    const stats = await api.getStats();
-    expect(stats.passed + stats.failed).toBeLessThanOrEqual(stats.totalScans);
-  });
-
-  it('mostMissed should be sorted by count descending', async () => {
-    const stats = await api.getStats();
-    for (let i = 1; i < stats.mostMissed.length; i++) {
-      expect(stats.mostMissed[i - 1].count).toBeGreaterThanOrEqual(stats.mostMissed[i].count);
+  it('most_missed_ppe is sorted descending', async () => {
+    const res = await api.getEntryLogStats();
+    for (let i = 1; i < res.data.most_missed_ppe.length; i++) {
+      expect(res.data.most_missed_ppe[i - 1].miss_count)
+        .toBeGreaterThanOrEqual(res.data.most_missed_ppe[i].miss_count);
     }
   });
 
-  it('dailyData should contain date, pass, fail, rate fields', async () => {
-    const stats = await api.getStats();
-    expect(stats.dailyData.length).toBeGreaterThan(0);
-    stats.dailyData.forEach(day => {
-      expect(day).toHaveProperty('date');
-      expect(day).toHaveProperty('pass');
-      expect(day).toHaveProperty('fail');
-      expect(day).toHaveProperty('rate');
-    });
-  });
-
-  it('recentLogs should contain at most 5 entries', async () => {
-    const stats = await api.getStats();
-    expect(stats.recentLogs.length).toBeLessThanOrEqual(5);
+  it('filters stats by date range', async () => {
+    const res = await api.getEntryLogStats({ start_date: '2026-04-29', end_date: '2026-04-29' });
+    expect(res.data.period.start_date).toBe('2026-04-29');
   });
 });
