@@ -49,6 +49,89 @@ const createRole = async (req, res, next) => {
 };
 
 // ─── GET /api/roles/:id/ppe ──────────────────────────────
+const updateRole = async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { role_name, description } = req.body;
+
+    const existing = await prisma.role.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 404, message: 'Role not found' },
+      });
+    }
+
+    if (role_name && role_name !== existing.roleName) {
+      const duplicate = await prisma.role.findUnique({
+        where: { roleName: role_name },
+      });
+      if (duplicate) {
+        return res.status(409).json({
+          success: false,
+          error: { code: 409, message: 'Role name already exists' },
+        });
+      }
+    }
+
+    const updateData = {};
+    if (role_name !== undefined) updateData.roleName = role_name;
+    if (description !== undefined) updateData.description = description || null;
+
+    const role = await prisma.role.update({
+      where: { id },
+      data: updateData,
+    });
+
+    res.json({
+      success: true,
+      data: formatRole(role),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const deleteRole = async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+
+    const existing = await prisma.role.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 404, message: 'Role not found' },
+      });
+    }
+
+    const activeWorkerCount = await prisma.worker.count({
+      where: { roleId: id, isActive: true },
+    });
+    if (activeWorkerCount > 0) {
+      return res.status(409).json({
+        success: false,
+        error: {
+          code: 409,
+          message: `Cannot delete role: ${activeWorkerCount} active worker(s) assigned`,
+        },
+      });
+    }
+
+    await prisma.$transaction([
+      prisma.rolePpeRequirement.deleteMany({ where: { roleId: id } }),
+      prisma.role.delete({ where: { id } }),
+    ]);
+
+    res.json({
+      success: true,
+      message: 'Role deleted',
+      data: { id },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 const getRolePpe = async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
@@ -159,6 +242,8 @@ function formatRole(role) {
 module.exports = {
   getAllRoles,
   createRole,
+  updateRole,
+  deleteRole,
   getRolePpe,
   updateRolePpe,
 };

@@ -23,6 +23,7 @@ app.use('/api/workers', workerRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/ppe-items', ppeItemRoutes);
 app.use('/api/entry-logs', entryLogRoutes);
+app.get('/api/stats', require('./controllers/entryLog.controller').getEntryLogStats);
 
 // Root route
 app.get('/', (req, res) => {

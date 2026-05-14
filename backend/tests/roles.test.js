@@ -65,6 +65,79 @@ describe('POST /api/roles', () => {
 });
 
 // ─── GET /api/roles/:id/ppe ──────────────────────────────
+describe('PUT /api/roles/:id', () => {
+  it('should update a role', async () => {
+    const updated = { ...mockRole, roleName: 'Senior Welder' };
+    prisma.role.findUnique.mockResolvedValueOnce(mockRole);
+    prisma.role.update.mockResolvedValue(updated);
+
+    const res = await request(app)
+      .put('/api/roles/1')
+      .send({ role_name: 'Senior Welder', description: 'Updated' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.role_name).toBe('Senior Welder');
+  });
+
+  it('should return 404 when updating a missing role', async () => {
+    prisma.role.findUnique.mockResolvedValue(null);
+
+    const res = await request(app)
+      .put('/api/roles/999')
+      .send({ role_name: 'Missing' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.message).toMatch(/Role not found/i);
+  });
+
+  it('should return 409 when updating to a duplicate role name', async () => {
+    prisma.role.findUnique
+      .mockResolvedValueOnce(mockRole)
+      .mockResolvedValueOnce({ id: 2, roleName: 'Technician' });
+
+    const res = await request(app)
+      .put('/api/roles/1')
+      .send({ role_name: 'Technician' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.message).toMatch(/already exists/i);
+  });
+});
+
+describe('DELETE /api/roles/:id', () => {
+  it('should delete a role with no active workers', async () => {
+    prisma.role.findUnique.mockResolvedValue(mockRole);
+    prisma.worker.count.mockResolvedValue(0);
+    prisma.$transaction.mockResolvedValue([]);
+
+    const res = await request(app).delete('/api/roles/1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.id).toBe(1);
+  });
+
+  it('should return 404 when deleting a missing role', async () => {
+    prisma.role.findUnique.mockResolvedValue(null);
+
+    const res = await request(app).delete('/api/roles/999');
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.message).toMatch(/Role not found/i);
+  });
+
+  it('should return 409 when active workers are assigned', async () => {
+    prisma.role.findUnique.mockResolvedValue(mockRole);
+    prisma.worker.count.mockResolvedValue(2);
+
+    const res = await request(app).delete('/api/roles/1');
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.message).toMatch(/active worker/i);
+  });
+});
+
 describe('GET /api/roles/:id/ppe', () => {
   it('should return PPE requirements for a role', async () => {
     const roleWithPpe = {
