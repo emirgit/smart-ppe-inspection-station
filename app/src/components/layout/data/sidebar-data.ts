@@ -6,7 +6,6 @@ import {
   BarChart3,
   HardHat,
   Settings,
-  Palette,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -41,7 +40,7 @@ export const sidebarData: SidebarData = {
           title: 'Ayarlar',
           icon: Settings,
           items: [
-            { title: 'Görünüm', url: '/settings/appearance', icon: Palette },
+            { title: 'Hesap', url: '/settings/account', icon: Settings },
           ],
         },
       ],

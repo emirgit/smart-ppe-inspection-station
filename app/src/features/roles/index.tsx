@@ -109,40 +109,6 @@ function RoleDialog({ open, onOpenChange, role, onSaved }: any) {
   )
 }
 
-function PpeDialog({ open, onOpenChange, item, onSaved }: any) {
-  const isEdit = !!item
-  const [form, setForm] = useState({ item_key: '', display_name: '', icon_name: '' })
-  const [saving, setSaving] = useState(false)
-  useEffect(() => { if (open) setForm({ item_key: item?.item_key || '', display_name: item?.display_name || '', icon_name: item?.icon_name || '' }) }, [open, item])
-  async function handleSubmit(e: any) {
-    e.preventDefault()
-    if (!form.item_key.trim() || !form.display_name.trim()) { toast.error('item_key ve display_name gerekli.'); return }
-    setSaving(true)
-    try {
-      if (isEdit) await api.updatePpeItem(item.id, form); else await api.createPpeItem({ ...form, item_key: form.item_key.toUpperCase() })
-      toast.success(isEdit ? 'PPE item güncellendi.' : 'PPE item eklendi.')
-      onSaved(); onOpenChange(false)
-    } catch (e: any) { toast.error(e.message) }
-    finally { setSaving(false) }
-  }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>{isEdit ? 'PPE Item Düzenle' : 'Yeni PPE Item'}</DialogTitle><DialogDescription>PPE ekipman bilgilerini girin.</DialogDescription></DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <div className="space-y-1.5"><Label>Item Key</Label><Input value={form.item_key} onChange={e => setForm(f => ({ ...f, item_key: e.target.value.toUpperCase() }))} placeholder="HELMET" disabled={isEdit} /><p className="text-xs text-muted-foreground">AI modeli ile eşleşmeli (örn. HELMET, VEST)</p></div>
-          <div className="space-y-1.5"><Label>Görünen Ad</Label><Input value={form.display_name} onChange={e => setForm(f => ({ ...f, display_name: e.target.value }))} placeholder="Baret" /></div>
-          <div className="space-y-1.5"><Label>İkon Adı</Label><Input value={form.icon_name} onChange={e => setForm(f => ({ ...f, icon_name: e.target.value }))} placeholder="hard-hat" /></div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>İptal</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Kaydediliyor...' : 'Kaydet'}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 export function Roles() {
   const [roles, setRoles] = useState<any[]>([])
   const [ppeItems, setPpeItems] = useState<any[]>([])
@@ -151,9 +117,6 @@ export function Roles() {
   const [roleDialog, setRoleDialog] = useState(false)
   const [editRole, setEditRole] = useState<any>(null)
   const [deleteTarget, setDeleteTarget] = useState<any>(null)
-  const [ppeDialog, setPpeDialog] = useState(false)
-  const [editPpe, setEditPpe] = useState<any>(null)
-  const [deletePpeTarget, setDeletePpeTarget] = useState<any>(null)
 
   async function load() {
     setLoading(true); setError(null)
@@ -171,11 +134,6 @@ export function Roles() {
     try { await api.deleteRole(deleteTarget.id); toast.success('Rol silindi.'); setDeleteTarget(null); load() }
     catch (e: any) { toast.error(e.message) }
   }
-  async function handleDeletePpe() {
-    if (!deletePpeTarget) return
-    try { await api.deletePpeItem(deletePpeTarget.id); toast.success('PPE item silindi.'); setDeletePpeTarget(null); load() }
-    catch (e: any) { toast.error(e.message) }
-  }
 
   return (
     <>
@@ -191,37 +149,52 @@ export function Roles() {
             </div>
           )}
 
+          {/* Roller */}
           <div>
             <div className="flex items-center justify-between mb-4">
-              <div><h2 className="text-lg font-semibold">Roller</h2><p className="text-xs text-muted-foreground">Her role PPE gereksinimlerini buradan atayın</p></div>
-              <Button size="sm" onClick={() => { setEditRole(null); setRoleDialog(true) }}><Plus className="h-4 w-4 mr-1" /> Yeni Rol</Button>
+              <div>
+                <h2 className="text-lg font-semibold">Roller</h2>
+                <p className="text-xs text-muted-foreground">Her role PPE gereksinimlerini buradan atayın</p>
+              </div>
+              <Button size="sm" onClick={() => { setEditRole(null); setRoleDialog(true) }}>
+                <Plus className="h-4 w-4 mr-1" /> Yeni Rol
+              </Button>
             </div>
             {loading
               ? <div className="grid gap-4 md:grid-cols-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40" />)}</div>
               : roles.length === 0
                 ? <div className="text-center py-10 text-muted-foreground text-sm border rounded-md">Henüz rol yok</div>
-                : <div className="grid gap-4 md:grid-cols-2">{roles.map(r => <RoleCard key={r.id} role={r} ppeItems={ppeItems} onEdit={r => { setEditRole(r); setRoleDialog(true) }} onDelete={setDeleteTarget} onPpeChange={load} />)}</div>
+                : <div className="grid gap-4 md:grid-cols-2">
+                    {roles.map(r => (
+                      <RoleCard
+                        key={r.id}
+                        role={r}
+                        ppeItems={ppeItems}
+                        onEdit={r => { setEditRole(r); setRoleDialog(true) }}
+                        onDelete={setDeleteTarget}
+                        onPpeChange={load}
+                      />
+                    ))}
+                  </div>
             }
           </div>
 
           <Separator />
 
+          {/* PPE Kataloğu — sadece görüntüleme */}
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <div><h2 className="text-lg font-semibold">PPE Kataloğu</h2><p className="text-xs text-muted-foreground">AI modeli tarafından algılanabilecek ekipmanlar</p></div>
-              <Button size="sm" onClick={() => { setEditPpe(null); setPpeDialog(true) }}><Plus className="h-4 w-4 mr-1" /> Yeni PPE Item</Button>
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold">PPE Kataloğu</h2>
+              <p className="text-xs text-muted-foreground">AI modeli tarafından algılanabilecek ekipmanlar</p>
             </div>
             {loading
               ? <div className="grid gap-3 grid-cols-2 md:grid-cols-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
               : <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                   {ppeItems.map((p: any) => (
-                    <Card key={p.id} className="group">
-                      <CardContent className="p-4 flex items-center justify-between gap-2">
-                        <div className="min-w-0"><p className="text-sm font-medium truncate">{p.display_name}</p><code className="text-xs text-muted-foreground">{p.item_key}</code></div>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditPpe(p); setPpeDialog(true) }}><Pencil className="h-3 w-3" /></Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeletePpeTarget(p)}><Trash2 className="h-3 w-3" /></Button>
-                        </div>
+                    <Card key={p.id}>
+                      <CardContent className="p-4">
+                        <p className="text-sm font-medium truncate">{p.display_name}</p>
+                        <code className="text-xs text-muted-foreground">{p.item_key}</code>
                       </CardContent>
                     </Card>
                   ))}
@@ -231,12 +204,18 @@ export function Roles() {
         </div>
 
         <RoleDialog open={roleDialog} onOpenChange={setRoleDialog} role={editRole} onSaved={load} />
-        <PpeDialog open={ppeDialog} onOpenChange={setPpeDialog} item={editPpe} onSaved={load} />
+
         <AlertDialog open={!!deleteTarget} onOpenChange={v => !v && setDeleteTarget(null)}>
-          <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Rolü sil?</AlertDialogTitle><AlertDialogDescription><strong>{deleteTarget?.role_name}</strong> rolü kalıcı olarak silinecek.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>İptal</AlertDialogCancel><AlertDialogAction onClick={handleDeleteRole} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Sil</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
-        </AlertDialog>
-        <AlertDialog open={!!deletePpeTarget} onOpenChange={v => !v && setDeletePpeTarget(null)}>
-          <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>PPE item sil?</AlertDialogTitle><AlertDialogDescription><strong>{deletePpeTarget?.display_name}</strong> silinecek.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>İptal</AlertDialogCancel><AlertDialogAction onClick={handleDeletePpe} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Sil</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Rolü sil?</AlertDialogTitle>
+              <AlertDialogDescription><strong>{deleteTarget?.role_name}</strong> rolü kalıcı olarak silinecek.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>İptal</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteRole} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Sil</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
         </AlertDialog>
       </Main>
     </>
