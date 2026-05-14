@@ -284,4 +284,15 @@ describe('GET /api/entry-logs/stats', () => {
       end_date: '2026-04-10',
     });
   });
+
+  it('should expose the admin stats alias at /api/stats', async () => {
+    prisma.entryLog.count.mockResolvedValue(0);
+    prisma.detectionDetail.groupBy.mockResolvedValue([]);
+
+    const res = await request(app).get('/api/stats');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveProperty('total_scans');
+  });
 });

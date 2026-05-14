@@ -1,119 +1,176 @@
-import { useState, useEffect } from 'react';
-import { api } from '../services/api';
-import { Search } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Search, ClipboardList, RefreshCw } from 'lucide-react';
+import { api } from '@/services/api';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ResultBadge } from '@/components/ui/result-badge';
+import { EmptyState } from '@/components/empty-state';
+import { ErrorState } from '@/components/error-state';
 
-function ResultBadge({ result }) {
-  const styles = {
-    PASS: 'bg-success-50 text-success-600 border-success-200',
-    FAIL: 'bg-danger-50 text-danger-600 border-danger-200',
-    UNKNOWN_CARD: 'bg-warning-50 text-warning-600 border-warning-200',
-  };
-  const labels = { PASS: 'Pass', FAIL: 'Fail', UNKNOWN_CARD: 'Unknown' };
-  return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${styles[result] || ''}`}>
-      {labels[result] || result}
-    </span>
-  );
-}
+const POLL_INTERVAL_MS = 10000;
 
 export default function Logs() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [resultFilter, setResultFilter] = useState('ALL');
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const intervalRef = useRef(null);
 
+  const load = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      setError(null);
+      const res = await api.listEntryLogs({
+        result: resultFilter === 'ALL' ? undefined : resultFilter,
+        limit: 100,
+      });
+      setLogs(res.data);
+      setLastUpdated(new Date());
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [resultFilter]);
+
+  // Initial load + when filter changes
+  useEffect(() => { load(); }, [load]);
+
+  // Polling
   useEffect(() => {
-    loadLogs();
-  }, [resultFilter, search]);
+    intervalRef.current = setInterval(() => {
+      load(true);
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(intervalRef.current);
+  }, [load]);
 
-  const loadLogs = async () => {
-    setLoading(true);
-    const data = await api.getEntryLogs({
-      result: resultFilter === 'ALL' ? undefined : resultFilter,
-      search: search || undefined,
-    });
-    setLogs(data);
-    setLoading(false);
-  };
+  // Frontend search filter
+  const filtered = logs.filter(log => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return log.worker_name?.toLowerCase().includes(s) || log.rfid_uid_scanned?.toLowerCase().includes(s);
+  });
+
+  if (loading) {
+    return (
+      <div className="p-8 space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
+
+  if (error) return <div className="p-8"><ErrorState description={error} onRetry={load} /></div>;
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Entry Logs</h1>
-        <p className="text-sm text-gray-500 mt-1">History of all inspection events at the turnstile</p>
+    <div className="p-8 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Entry Logs</h1>
+          <p className="text-sm text-muted-foreground">
+            History of inspection events
+            {lastUpdated && (
+              <span className="ml-2 text-xs">
+                · Updated {lastUpdated.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => load()} className="gap-2">
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </Button>
       </div>
 
-      <div className="flex gap-3 mb-4">
+      <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
             placeholder="Search by name or RFID..."
+            className="pl-9"
           />
         </div>
-        <select
-          value={resultFilter}
-          onChange={(e) => setResultFilter(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-        >
-          <option value="ALL">All Results</option>
-          <option value="PASS">Pass Only</option>
-          <option value="FAIL">Fail Only</option>
-          <option value="UNKNOWN_CARD">Unknown Cards</option>
-        </select>
+        <Select value={resultFilter} onValueChange={setResultFilter}>
+          <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All Results</SelectItem>
+            <SelectItem value="PASS">Pass Only</SelectItem>
+            <SelectItem value="FAIL">Fail Only</SelectItem>
+            <SelectItem value="UNKNOWN_CARD">Unknown Cards</SelectItem>
+          </SelectContent>
+        </Select>
+        <Badge variant="outline" className="ml-auto">
+          {filtered.length} log{filtered.length !== 1 ? 's' : ''}
+        </Badge>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Time</th>
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Worker</th>
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Result</th>
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Missing Items</th>
-              <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Duration</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {loading ? (
-              <tr><td colSpan={6} className="px-5 py-8 text-center text-sm text-gray-400">Loading...</td></tr>
-            ) : logs.length === 0 ? (
-              <tr><td colSpan={6} className="px-5 py-12 text-center text-sm text-gray-400">No logs found.</td></tr>
-            ) : logs.map(log => (
-              <tr key={log.id} className="hover:bg-gray-50/50 transition">
-                <td className="px-5 py-3.5 text-sm text-gray-600">
-                  {new Date(log.scannedAt).toLocaleString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </td>
-                <td className="px-5 py-3.5 text-sm font-medium text-gray-900">
-                  {log.workerName || <span className="text-gray-400 italic">Unknown</span>}
-                </td>
-                <td className="px-5 py-3.5 text-sm text-gray-600">{log.role || '—'}</td>
-                <td className="px-5 py-3.5"><ResultBadge result={log.result} /></td>
-                <td className="px-5 py-3.5">
-                  {log.missingItems.length === 0 ? (
-                    <span className="text-xs text-gray-300">—</span>
-                  ) : (
-                    <div className="flex flex-wrap gap-1">
-                      {log.missingItems.map(item => (
-                        <span key={item} className="px-1.5 py-0.5 bg-danger-50 text-danger-600 text-xs rounded border border-danger-100">
-                          {item.replace('_', ' ')}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                <td className="px-5 py-3.5 text-sm text-gray-400">
-                  {log.inspectionTimeMs ? `${(log.inspectionTimeMs / 1000).toFixed(1)}s` : '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Card>
+        {filtered.length === 0 ? (
+          <EmptyState
+            icon={ClipboardList}
+            title="No logs found"
+            description={search || resultFilter !== 'ALL'
+              ? "Try adjusting your filters."
+              : "Inspection events will appear here."}
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Time</TableHead>
+                <TableHead>Worker</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Result</TableHead>
+                <TableHead>Missing Items</TableHead>
+                <TableHead>Duration</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map(log => (
+                <TableRow key={log.id}>
+                  <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
+                    {new Date(log.scanned_at).toLocaleString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </TableCell>
+                  <TableCell>
+                    {log.worker_name ? (
+                      <span className="font-medium">{log.worker_name}</span>
+                    ) : (
+                      <span className="text-muted-foreground italic">Unknown</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{log.role || '—'}</TableCell>
+                  <TableCell><ResultBadge result={log.result} /></TableCell>
+                  <TableCell>
+                    {log.missing_ppe.length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {log.missing_ppe.map(item => (
+                          <Badge key={item.item_key} variant="outline" className="border-destructive/30 text-destructive text-xs">
+                            {item.display_name}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {log.inspection_time_ms ? `${(log.inspection_time_ms / 1000).toFixed(1)}s` : '—'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
     </div>
   );
 }

@@ -1,10 +1,10 @@
 import { Routes, Route } from 'react-router-dom';
-import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
-import Workers from './pages/Workers';
-import Roles from './pages/Roles';
-import Logs from './pages/Logs';
-import Analytics from './pages/Analytics';
+import Layout from '@/components/Layout';
+import Dashboard from '@/pages/Dashboard';
+import Workers from '@/pages/Workers';
+import Roles from '@/pages/Roles';
+import Logs from '@/pages/Logs';
+import Analytics from '@/pages/Analytics';
 
 export default function App() {
   return (
