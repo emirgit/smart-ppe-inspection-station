@@ -1,53 +1,27 @@
 import { create } from 'zustand'
-import { getCookie, setCookie, removeCookie } from '@/lib/cookies'
 
-const ACCESS_TOKEN = 'thisisjustarandomstring'
-
-interface AuthUser {
-  accountNo: string
-  email: string
-  role: string[]
-  exp: number
-}
+const TOKEN_KEY = 'ppe_admin_token'
 
 interface AuthState {
-  auth: {
-    user: AuthUser | null
-    setUser: (user: AuthUser | null) => void
-    accessToken: string
-    setAccessToken: (accessToken: string) => void
-    resetAccessToken: () => void
-    reset: () => void
-  }
+  token: string | null
+  isAuthenticated: boolean
+  setToken: (token: string) => void
+  clearToken: () => void
 }
 
-export const useAuthStore = create<AuthState>()((set) => {
-  const cookieState = getCookie(ACCESS_TOKEN)
-  const initToken = cookieState ? JSON.parse(cookieState) : ''
-  return {
-    auth: {
-      user: null,
-      setUser: (user) =>
-        set((state) => ({ ...state, auth: { ...state.auth, user } })),
-      accessToken: initToken,
-      setAccessToken: (accessToken) =>
-        set((state) => {
-          setCookie(ACCESS_TOKEN, JSON.stringify(accessToken))
-          return { ...state, auth: { ...state.auth, accessToken } }
-        }),
-      resetAccessToken: () =>
-        set((state) => {
-          removeCookie(ACCESS_TOKEN)
-          return { ...state, auth: { ...state.auth, accessToken: '' } }
-        }),
-      reset: () =>
-        set((state) => {
-          removeCookie(ACCESS_TOKEN)
-          return {
-            ...state,
-            auth: { ...state.auth, user: null, accessToken: '' },
-          }
-        }),
-    },
-  }
-})
+export const useAuthStore = create<AuthState>((set) => ({
+  token: localStorage.getItem(TOKEN_KEY),
+  isAuthenticated: !!localStorage.getItem(TOKEN_KEY),
+  setToken: (token: string) => {
+    localStorage.setItem(TOKEN_KEY, token)
+    set({ token, isAuthenticated: true })
+  },
+  clearToken: () => {
+    localStorage.removeItem(TOKEN_KEY)
+    set({ token: null, isAuthenticated: false })
+  },
+}))
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}

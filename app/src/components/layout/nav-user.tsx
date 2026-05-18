@@ -1,5 +1,5 @@
-import { Link } from '@tanstack/react-router'
-import { BadgeCheck, Bell, ChevronsUpDown, LogOut, Settings } from 'lucide-react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { Bell, ChevronsUpDown, LogOut, Settings } from 'lucide-react'
 import useDialogState from '@/hooks/use-dialog-state'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -9,7 +9,11 @@ import {
 import {
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar,
 } from '@/components/ui/sidebar'
-import { SignOutDialog } from '@/components/sign-out-dialog'
+import { useAuthStore } from '@/stores/auth-store'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 type NavUserProps = {
   user: { name: string; email: string; avatar: string }
@@ -17,7 +21,9 @@ type NavUserProps = {
 
 export function NavUser({ user }: NavUserProps) {
   const { isMobile } = useSidebar()
-  const [open, setOpen] = useDialogState()
+  const { clearToken } = useAuthStore()
+  const navigate = useNavigate()
+  const [confirmOpen, setConfirmOpen] = useDialogState()
 
   const initials = user.name
     .split(' ')
@@ -25,6 +31,11 @@ export function NavUser({ user }: NavUserProps) {
     .join('')
     .toUpperCase()
     .slice(0, 2)
+
+  function handleSignOut() {
+    clearToken()
+    navigate({ to: '/sign-in' })
+  }
 
   return (
     <>
@@ -65,9 +76,9 @@ export function NavUser({ user }: NavUserProps) {
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem asChild>
-                  <Link to='/settings/appearance'>
+                  <Link to='/settings/account'>
                     <Settings />
-                    Görünüm
+                    Ayarlar
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
@@ -78,7 +89,7 @@ export function NavUser({ user }: NavUserProps) {
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem variant='destructive' onClick={() => setOpen(true)}>
+              <DropdownMenuItem variant='destructive' onClick={() => setConfirmOpen(true)}>
                 <LogOut />
                 Çıkış Yap
               </DropdownMenuItem>
@@ -86,7 +97,23 @@ export function NavUser({ user }: NavUserProps) {
           </DropdownMenu>
         </SidebarMenuItem>
       </SidebarMenu>
-      <SignOutDialog open={!!open} onOpenChange={setOpen} />
+
+      <AlertDialog open={!!confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Çıkış yapmak istiyor musunuz?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Oturumunuz kapatılacak ve giriş sayfasına yönlendirileceksiniz.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSignOut} className='bg-destructive text-destructive-foreground hover:bg-destructive/90'>
+              Çıkış Yap
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

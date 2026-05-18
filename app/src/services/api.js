@@ -10,17 +10,31 @@ export class ApiError extends Error {
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001'
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
+const TOKEN_KEY = 'ppe_admin_token'
+
+function getToken() {
+  return localStorage.getItem(TOKEN_KEY)
+}
 
 async function apiFetch(path, options = {}) {
+  const token = getToken()
+  const headers = { 'Content-Type': 'application/json', ...options.headers }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
   const controller = new AbortController()
   const tid = setTimeout(() => controller.abort(), 8000)
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
-      ...options,
-      headers: { 'Content-Type': 'application/json', ...options.headers },
-      signal: controller.signal,
+      ...options, headers, signal: controller.signal,
     })
     clearTimeout(tid)
+
+    if (res.status === 401) {
+      localStorage.removeItem(TOKEN_KEY)
+      window.location.href = '/sign-in'
+      throw new ApiError(401, 'Oturum süresi doldu')
+    }
+
     const json = await res.json()
     if (!res.ok || !json.success) throw new ApiError(json.error?.code || res.status, json.error?.message || `HTTP ${res.status}`)
     return json
@@ -32,6 +46,24 @@ async function apiFetch(path, options = {}) {
   }
 }
 
+// ── Auth ─────────────────────────────────────────────────
+export const authApi = {
+  async login(email, password) {
+    const res = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    })
+    const json = await res.json()
+    if (!res.ok || !json.success) throw new ApiError(res.status, json.error?.message || 'Giriş başarısız')
+    return json
+  },
+  async me() {
+    return apiFetch('/api/auth/me')
+  },
+}
+
+// ── Mock state ────────────────────────────────────────────
 let mockWorkers   = [...mock.workers]
 let mockRoles     = [...mock.roles]
 let mockPpeItems  = [...mock.ppeItems]
@@ -73,6 +105,28 @@ const mockApi = {
     if (idx === -1) throw new ApiError(404, 'Çalışan bulunamadı')
     mockWorkers[idx].is_active = false; return { success: true, data: { id, is_active: false } }
   },
+  async hardDeleteWorker(id) {
+    await delay(400); const idx = mockWorkers.findIndex(w => w.id === id)
+    if (idx === -1) throw new ApiError(404, 'Çalışan bulunamadı')
+    mockWorkers.splice(idx, 1); return { success: true, message: 'Çalışan kalıcı olarak silindi' }
+  },
+  async reactivateWorker(id) {
+    await delay(400); const idx = mockWorkers.findIndex(w => w.id === id)
+    if (idx === -1) throw new ApiError(404, 'Çalışan bulunamadı')
+    mockWorkers[idx].is_active = true; return { success: true, data: { id, is_active: true } }
+  },
+  async uploadWorkerPhoto(id, _file) {
+    await delay(600)
+    const url = `https://picsum.photos/seed/${id}/200/200`
+    const idx = mockWorkers.findIndex(w => w.id === id)
+    if (idx > -1) mockWorkers[idx].photo_url = url
+    return { success: true, data: { photo_url: url } }
+  },
+  async deleteWorkerPhoto(id) {
+    await delay(400); const idx = mockWorkers.findIndex(w => w.id === id)
+    if (idx > -1) mockWorkers[idx].photo_url = null
+    return { success: true }
+  },
   async listRoles() {
     await delay()
     return { success: true, data: mockRoles.map(r => ({ ...r, ppe_items: mockPpeItems.filter(p => r.required_ppe.includes(p.id)), worker_count: mockWorkers.filter(w => w.role_id === r.id && w.is_active).length })) }
@@ -107,23 +161,6 @@ const mockApi = {
     return { success: true, data: { role_id: id, role_name: mockRoles[idx].role_name, ppe_items: mockPpeItems.filter(p => body.ppe_item_ids.includes(p.id)) } }
   },
   async listPpeItems() { await delay(); return { success: true, data: [...mockPpeItems] } },
-  async createPpeItem(body) {
-    await delay(400)
-    if (mockPpeItems.some(p => p.item_key === body.item_key)) throw new ApiError(409, 'Bu item_key zaten mevcut')
-    const item = { id: nextPpeId++, ...body }; mockPpeItems.push(item); return { success: true, data: item }
-  },
-  async updatePpeItem(id, body) {
-    await delay(400); const idx = mockPpeItems.findIndex(p => p.id === id)
-    if (idx === -1) throw new ApiError(404, 'PPE item bulunamadı')
-    mockPpeItems[idx] = { ...mockPpeItems[idx], ...body }; return { success: true, data: mockPpeItems[idx] }
-  },
-  async deletePpeItem(id) {
-    await delay(400); const idx = mockPpeItems.findIndex(p => p.id === id)
-    if (idx === -1) throw new ApiError(404, 'PPE item bulunamadı')
-    const using = mockRoles.filter(r => r.required_ppe.includes(id))
-    if (using.length > 0) throw new ApiError(409, `${using.length} rol tarafından kullanılıyor`)
-    mockPpeItems.splice(idx, 1); return { success: true }
-  },
   async listEntryLogs(q = {}) {
     await delay(); let data = [...mockEntryLogs]
     if (q.result) data = data.filter(l => l.result === q.result)
@@ -174,6 +211,22 @@ const realApi = {
   getWorkerById(id)      { return apiFetch(`/api/workers/${id}`) },
   updateWorker(id, body) { return apiFetch(`/api/workers/${id}`, { method: 'PUT', body: JSON.stringify(body) }) },
   softDeleteWorker(id)   { return apiFetch(`/api/workers/${id}`, { method: 'DELETE' }) },
+  hardDeleteWorker(id)   { return apiFetch(`/api/workers/${id}/permanent`, { method: 'DELETE' }) },
+  reactivateWorker(id)   { return apiFetch(`/api/workers/${id}`, { method: 'PUT', body: JSON.stringify({ is_active: true }) }) },
+  async uploadWorkerPhoto(id, file) {
+    const token = getToken()
+    const formData = new FormData()
+    formData.append('photo', file)
+    const res = await fetch(`${BASE_URL}/api/workers/${id}/photo`, {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      body: formData,
+    })
+    const json = await res.json()
+    if (!res.ok) throw new ApiError(res.status, json.error?.message || 'Fotoğraf yüklenemedi')
+    return json
+  },
+  deleteWorkerPhoto(id)  { return apiFetch(`/api/workers/${id}/photo`, { method: 'DELETE' }) },
   async listRoles() {
     const [rr, pr, wr] = await Promise.all([apiFetch('/api/roles'), apiFetch('/api/ppe-items'), apiFetch('/api/workers').catch(() => ({ data: [] }))])
     const allWorkers = wr.data || []
@@ -190,9 +243,6 @@ const realApi = {
   getRolePpe(id)           { return apiFetch(`/api/roles/${id}/ppe`) },
   replaceRolePpe(id, body) { return apiFetch(`/api/roles/${id}/ppe`, { method: 'PUT', body: JSON.stringify(body) }) },
   listPpeItems()           { return apiFetch('/api/ppe-items') },
-  createPpeItem(body)      { return apiFetch('/api/ppe-items', { method: 'POST', body: JSON.stringify(body) }) },
-  updatePpeItem(id, body)  { return apiFetch(`/api/ppe-items/${id}`, { method: 'PUT', body: JSON.stringify(body) }) },
-  deletePpeItem(id)        { return apiFetch(`/api/ppe-items/${id}`, { method: 'DELETE' }) },
   listEntryLogs(q = {}) {
     const p = new URLSearchParams()
     Object.entries(q).forEach(([k, v]) => v !== undefined && p.set(k, v))
