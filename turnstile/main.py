@@ -19,7 +19,7 @@ from src.iot_core.api_clients.ws_display_client import WebSocketDisplayNotifier
 # Uncomment this if you are using Wi-Fi RFID reading via ESP32:
 from src.iot_core.hardware.rfid_http_server import HttpRfidReader
 
-from ai_vision.include.module_ai_vision import AIVisionModule
+from ai_vision.ai_vision import AIVisionImpl
 
 # Logging configuration (to see what is happening in the terminal)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -41,7 +41,7 @@ def main():
     rfid = HttpRfidReader() # Will automatically start the server on port 8000 based on its internal init
     
     gate = GateController() # Pass GPIO pin number as parameter if necessary
-    ai = AIVisionModule()
+    ai = AIVisionImpl()
 
     # 3. Wire components to the Orchestrator
     orchestrator = IoTOrchestrator(
