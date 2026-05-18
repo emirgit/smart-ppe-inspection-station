@@ -12,12 +12,12 @@ from src.iot_core.interfaces.iot_module import IoTConfig
 # Import necessary components (verify class names match your files)
 from src.iot_core.hardware.gate_control import GateController
 from src.iot_core.api_clients.http_backend_client import HttpBackendClient
-from src.iot_core.api_clients.ws_display_client import WsDisplayClient
+from src.iot_core.api_clients.ws_display_client import WebSocketDisplayNotifier
 
 # Uncomment this if you are using an SPI sensor directly connected to the Raspberry Pi:
 # from src.iot_core.hardware.rfid_spi import RfidSpiReader
 # Uncomment this if you are using Wi-Fi RFID reading via ESP32:
-from src.iot_core.hardware.rfid_http_server import RfidHttpServer
+from src.iot_core.hardware.rfid_http_server import HttpRfidReader
 
 from ai_vision.include.module_ai_vision import AIVisionModule
 
@@ -34,11 +34,11 @@ def main():
     
     # 2. Initialize sub-components
     backend = HttpBackendClient(base_url="http://localhost:3000/api") # Backend IP
-    display = WsDisplayClient(ws_url="ws://localhost:8080")           # Display IP
+    display = WebSocketDisplayNotifier(ws_url="ws://localhost:8080")  # Display IP
     
     # Select your RFID hardware (Mock or actual physical device)
     # rfid = RfidSpiReader()
-    rfid = RfidHttpServer(host="0.0.0.0", port=5000) # Currently configured as ESP32 web-hook simulation
+    rfid = HttpRfidReader() # Will automatically start the server on port 8000 based on its internal init
     
     gate = GateController() # Pass GPIO pin number as parameter if necessary
     ai = AIVisionModule()
