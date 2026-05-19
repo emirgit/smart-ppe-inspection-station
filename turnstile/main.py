@@ -49,7 +49,7 @@ def main():
     config = IoTConfig()
 
     # 2. Initialize sub-components
-    backend = HttpBackendClient(base_url="http://localhost:3000/api") # Backend IP
+    backend = HttpBackendClient()  # default: Heroku deployment
     display = WebSocketDisplayNotifier(ws_url="ws://localhost:8080")  # Display IP
 
     # Select your RFID hardware (Mock or actual physical device)
