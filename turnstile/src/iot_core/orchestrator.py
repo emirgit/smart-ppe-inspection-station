@@ -46,7 +46,7 @@ from src.iot_core.interfaces.iot_module import IoTModule, IoTConfig, SystemState
 from src.iot_core.interfaces.rfid_reader import RfidReader
 from src.iot_core.interfaces.backend_client import BackendClient
 from src.iot_core.interfaces.display_client import DisplayClient
-from src.iot_core.models import EntryLog, AccessDecision, WorkerInfo, DetectionItem
+from src.iot_core.models import EntryLog, AccessDecision, WorkerInfo, DetectionItem, PPE_CLASS_TO_ITEM_KEY
 from src.iot_core.hardware.gate_control           import GateController
 
 from ai_vision.include.module_ai_vision import AIVisionModule, CameraFrame, PPEClass
@@ -261,7 +261,9 @@ class IoTOrchestrator(IoTModule):
         self._set_state(SystemState.INSPECTING)
         self._display.notify_inspecting(worker)
 
+        inspection_start_ms = self._now_ms()
         detected_ppe, confidences = self._run_inspection()
+        inspection_duration_ms = self._now_ms() - inspection_start_ms
 
         missing_ppe: list[str] = [
             item for item in required_ppe_keys
@@ -274,9 +276,9 @@ class IoTOrchestrator(IoTModule):
 
         # ── DECISION ────────────────────────────────────────────────────────
         if not missing_ppe:
-            self._grant_access(worker, card_id, detected_ppe, confidences)
+            self._grant_access(worker, card_id, detected_ppe, confidences, inspection_duration_ms)
         else:
-            self._deny_access(worker, card_id, detected_ppe, missing_ppe, confidences)
+            self._deny_access(worker, card_id, detected_ppe, missing_ppe, confidences, inspection_duration_ms)
 
     # =========================================================================
     # Internal: AI inference
@@ -320,15 +322,19 @@ class IoTOrchestrator(IoTModule):
             # Keep only positive PPE classes (HELMET..GOGGLES); discard PERSON
             # and the NO_* negative classes — they do not contribute to the
             # "detected" set used for the compliance decision.
+            # Map PPEClass enum names to the backend item_key strings
+            # (e.g. "HELMET" → "hard_hat") using PPE_CLASS_TO_ITEM_KEY.
             detected_ppe: list[str] = []
             confidences: dict[str, float] = {}
             for item in result.items:
                 if item.ppe_class.value >= PPEClass.PERSON.value:
                     continue
-                key = item.ppe_class.name
-                if key not in confidences:
-                    detected_ppe.append(key)
-                confidences[key] = max(confidences.get(key, 0.0), float(item.confidence))
+                item_key = PPE_CLASS_TO_ITEM_KEY.get(item.ppe_class.name)
+                if item_key is None:
+                    continue
+                if item_key not in confidences:
+                    detected_ppe.append(item_key)
+                confidences[item_key] = max(confidences.get(item_key, 0.0), float(item.confidence))
 
             logger.info(
                 "_run_inspection: AI detected — %s (confidences=%s)",
@@ -346,10 +352,11 @@ class IoTOrchestrator(IoTModule):
 
     def _grant_access(
         self,
-        worker:       WorkerInfo,
-        card_id:      str,
-        detected_ppe: list[str],
-        confidences:  dict[str, float],
+        worker:                WorkerInfo,
+        card_id:               str,
+        detected_ppe:          list[str],
+        confidences:           dict[str, float],
+        inspection_duration_ms: int,
     ) -> None:
         """Opens the gate and logs a PASS decision."""
         self._set_state(SystemState.GRANTED)
@@ -368,6 +375,7 @@ class IoTOrchestrator(IoTModule):
             missing_ppe=[],
             detections=detections,
             timestamp_ms=self._now_ms(),
+            inspection_duration_ms=inspection_duration_ms,
         ))
 
         # Keep gate open for the configured duration, then close
@@ -376,11 +384,12 @@ class IoTOrchestrator(IoTModule):
 
     def _deny_access(
         self,
-        worker:       WorkerInfo,
-        card_id:      str,
-        detected_ppe: list[str],
-        missing_ppe:  list[str],
-        confidences:  dict[str, float],
+        worker:                WorkerInfo,
+        card_id:               str,
+        detected_ppe:          list[str],
+        missing_ppe:           list[str],
+        confidences:           dict[str, float],
+        inspection_duration_ms: int,
     ) -> None:
         """Keeps gate closed and logs a FAIL decision."""
         self._set_state(SystemState.DENIED)
@@ -400,6 +409,7 @@ class IoTOrchestrator(IoTModule):
             missing_ppe=missing_ppe,
             detections=detections,
             timestamp_ms=self._now_ms(),
+            inspection_duration_ms=inspection_duration_ms,
         ))
 
         time.sleep(self._config.denied_timeout_ms / 1000.0)

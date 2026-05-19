@@ -53,20 +53,22 @@ from typing import Optional
 
 
 # =============================================================================
-# CROSS-MODULE: SUPPORTED PPE KEY STRINGS
+# CROSS-MODULE: PPE KEY MAPPING
 # =============================================================================
 #
-# Single source of truth for PPE item_key strings exchanged between modules.
-# Must match PPEClass enum names in ai_vision/include/module_ai_vision.py
-# (positive classes only — HELMET, GLOVES, VEST, BOOTS, GOGGLES).
-# Backend (MOD-04) is expected to return item_keys from this set.
-SUPPORTED_PPE_KEYS: tuple[str, ...] = (
-    "HELMET",
-    "GLOVES",
-    "VEST",
-    "BOOTS",
-    "GOGGLES",
-)
+# Maps PPEClass enum names (from MOD-01 AI Vision) to the item_key strings
+# used by MOD-04 backend (e.g. RequiredPpeItem.item_key, DetectionItem fields).
+# This is the single source of truth for the naming boundary between modules.
+PPE_CLASS_TO_ITEM_KEY: dict[str, str] = {
+    "HELMET":  "hard_hat",
+    "GLOVES":  "gloves",
+    "VEST":    "safety_vest",
+    "BOOTS":   "safety_boots",
+    "GOGGLES": "safety_goggles",
+}
+
+# Backend item_key strings that the IoT module understands.
+SUPPORTED_PPE_KEYS: tuple[str, ...] = tuple(PPE_CLASS_TO_ITEM_KEY.values())
 
 
 # =============================================================================
@@ -134,10 +136,11 @@ class EntryLog:
     """
     Record of a single access attempt sent to the backend for auditing.
     """
-    card_id:      str
-    worker_id:    Optional[int]
-    decision:     AccessDecision
-    detected_ppe: list[str] = field(default_factory=list)
-    missing_ppe:  list[str] = field(default_factory=list)
-    detections:   list[DetectionItem] = field(default_factory=list)
-    timestamp_ms: int = 0
+    card_id:               str
+    worker_id:             Optional[int]
+    decision:              AccessDecision
+    detected_ppe:          list[str] = field(default_factory=list)
+    missing_ppe:           list[str] = field(default_factory=list)
+    detections:            list[DetectionItem] = field(default_factory=list)
+    timestamp_ms:          int = 0
+    inspection_duration_ms: Optional[int] = None
