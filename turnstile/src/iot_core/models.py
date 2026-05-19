@@ -53,6 +53,23 @@ from typing import Optional
 
 
 # =============================================================================
+# CROSS-MODULE: SUPPORTED PPE KEY STRINGS
+# =============================================================================
+#
+# Single source of truth for PPE item_key strings exchanged between modules.
+# Must match PPEClass enum names in ai_vision/include/module_ai_vision.py
+# (positive classes only — HELMET, GLOVES, VEST, BOOTS, GOGGLES).
+# Backend (MOD-04) is expected to return item_keys from this set.
+SUPPORTED_PPE_KEYS: tuple[str, ...] = (
+    "HELMET",
+    "GLOVES",
+    "VEST",
+    "BOOTS",
+    "GOGGLES",
+)
+
+
+# =============================================================================
 # ENUM: ACCESS DECISION
 # =============================================================================
 

@@ -123,6 +123,11 @@ class IoTOrchestrator(IoTModule):
             logger.error("init: GateController.init() failed")
             return False
 
+        # -- AI vision -------------------------------------------------------
+        if not self._ai.init():
+            logger.error("init: AIVisionModule.init() failed")
+            return False
+
         # -- Camera ----------------------------------------------------------
         self._cap = cv2.VideoCapture(self._camera_device)
         if not self._cap.isOpened():
@@ -140,7 +145,7 @@ class IoTOrchestrator(IoTModule):
         )
 
         # -- Display: show initial idle screen -------------------------------
-        self._display.show_idle()
+        self._display.notify_idle()
         self._set_state(SystemState.IDLE)
 
         logger.info("IoTOrchestrator: all components initialised OK")
@@ -180,10 +185,22 @@ class IoTOrchestrator(IoTModule):
         except Exception as exc:
             logger.warning("stop: gate_close() error — %s", exc)
 
+        # Stop the display transport (background WS thread, sockets, etc.)
+        try:
+            self._display.stop()
+        except Exception as exc:
+            logger.warning("stop: display.stop() error — %s", exc)
+
         # Release camera
         if self._cap and self._cap.isOpened():
             self._cap.release()
             self._cap = None
+
+        # Release AI inference resources
+        try:
+            self._ai.deinit()
+        except Exception as exc:
+            logger.warning("stop: ai.deinit() error — %s", exc)
 
         self._rfid.cleanup()
         self._gate.cleanup()
@@ -205,7 +222,7 @@ class IoTOrchestrator(IoTModule):
         """
         # ── IDLE: wait for card ──────────────────────────────────────────────
         self._set_state(SystemState.IDLE)
-        self._display.show_idle()
+        self._display.notify_idle()
 
         card_id = self._rfid.read_card(timeout_ms=None)
         if card_id is None or self._stop_event.is_set():
@@ -215,6 +232,7 @@ class IoTOrchestrator(IoTModule):
 
         # ── IDENTIFYING: query backend ───────────────────────────────────────
         self._set_state(SystemState.IDENTIFYING)
+        self._display.notify_identifying(card_id)
         worker: Optional[WorkerInfo] = self._backend.get_worker(card_id)
 
         if worker is None:
@@ -226,14 +244,14 @@ class IoTOrchestrator(IoTModule):
                 timestamp_ms=self._now_ms(),
                 detections=[]
             ))
-            self._display.show_unknown_card()
+            self._display.notify_unknown_card(card_id)
             self._set_state(SystemState.DENIED)
             time.sleep(self._config.denied_timeout_ms / 1000.0)
             return
 
         # extract item_key strings for easier manipulation internally
         required_ppe_keys = [p.item_key for p in worker.required_ppe]
-        
+
         logger.info(
             "_cycle: identified — %s (%s) required PPE: %s",
             worker.worker_name, worker.role, required_ppe_keys
@@ -241,9 +259,9 @@ class IoTOrchestrator(IoTModule):
 
         # ── INSPECTING: capture frame + run AI ──────────────────────────────
         self._set_state(SystemState.INSPECTING)
-        self._display.show_scanning()
+        self._display.notify_inspecting(worker)
 
-        detected_ppe: list[str] = self._run_inspection()
+        detected_ppe, confidences = self._run_inspection()
 
         missing_ppe: list[str] = [
             item for item in required_ppe_keys
@@ -256,30 +274,34 @@ class IoTOrchestrator(IoTModule):
 
         # ── DECISION ────────────────────────────────────────────────────────
         if not missing_ppe:
-            self._grant_access(worker, card_id, detected_ppe)
+            self._grant_access(worker, card_id, detected_ppe, confidences)
         else:
-            self._deny_access(worker, card_id, detected_ppe, missing_ppe)
+            self._deny_access(worker, card_id, detected_ppe, missing_ppe, confidences)
 
     # =========================================================================
     # Internal: AI inference
     # =========================================================================
 
-    def _run_inspection(self) -> list[str]:
+    def _run_inspection(self) -> tuple[list[str], dict[str, float]]:
         """
         Captures one camera frame and runs MOD-01 AI PPE detection.
 
         Returns:
-            List of detected PPE item_key strings (e.g. ["HELMET", "VEST"]).
-            Returns an empty list if the camera or AI fails.
+            A tuple (detected_keys, confidences) where:
+              - detected_keys is the list of detected PPE item_key strings
+                (e.g. ["HELMET", "VEST"]).
+              - confidences maps each detected key to the highest-confidence
+                bounding box observed for that class on this frame.
+            On any failure, both are empty / empty-dict.
         """
         if self._cap is None or not self._cap.isOpened():
             logger.error("_run_inspection: camera not available")
-            return []
+            return [], {}
 
         ret, raw_frame = self._cap.read()
         if not ret or raw_frame is None:
             logger.error("_run_inspection: failed to capture frame from camera")
-            return []
+            return [], {}
 
         try:
             rgb = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2RGB)
@@ -293,21 +315,30 @@ class IoTOrchestrator(IoTModule):
             result = self._ai.detect(camera_frame)
             if not result.success:
                 logger.error("_run_inspection: AI returned failure result")
-                return []
+                return [], {}
 
-            # Extract only positive PPE classes (0–4: HELMET, GLOVES, VEST, BOOTS, GOGGLES)
-            detected_ppe: list[str] = [
-                item.ppe_class.name
-                for item in result.items
-                if item.ppe_class.value < PPEClass.PERSON.value
-            ]
+            # Keep only positive PPE classes (HELMET..GOGGLES); discard PERSON
+            # and the NO_* negative classes — they do not contribute to the
+            # "detected" set used for the compliance decision.
+            detected_ppe: list[str] = []
+            confidences: dict[str, float] = {}
+            for item in result.items:
+                if item.ppe_class.value >= PPEClass.PERSON.value:
+                    continue
+                key = item.ppe_class.name
+                if key not in confidences:
+                    detected_ppe.append(key)
+                confidences[key] = max(confidences.get(key, 0.0), float(item.confidence))
 
-            logger.info("_run_inspection: AI detected — %s", detected_ppe)
-            return detected_ppe
+            logger.info(
+                "_run_inspection: AI detected — %s (confidences=%s)",
+                detected_ppe, {k: round(v, 3) for k, v in confidences.items()},
+            )
+            return detected_ppe, confidences
 
         except Exception as exc:
             logger.error("_run_inspection: AI detection failed — %s", exc)
-            return []
+            return [], {}
 
     # =========================================================================
     # Internal: grant / deny helpers
@@ -318,24 +349,16 @@ class IoTOrchestrator(IoTModule):
         worker:       WorkerInfo,
         card_id:      str,
         detected_ppe: list[str],
+        confidences:  dict[str, float],
     ) -> None:
         """Opens the gate and logs a PASS decision."""
         self._set_state(SystemState.GRANTED)
         logger.info("_grant_access: PASS — %s", worker.worker_name)
 
-        self._display.show_granted(worker.worker_name)
+        self._display.notify_pass(worker, detected_ppe)
         self._gate.gate_open()
-        
-        # Build detections list
-        detections = []
-        for ppe_item in worker.required_ppe:
-            was_detected = ppe_item.item_key in detected_ppe
-            detections.append(DetectionItem(
-                ppe_item_id=ppe_item.id,
-                was_required=True,
-                was_detected=was_detected,
-                confidence=0.99  # Mocked or retrieved from AI result
-            ))
+
+        detections = self._build_detection_items(worker, detected_ppe, confidences)
 
         self._backend.log_entry(EntryLog(
             card_id=card_id,
@@ -357,6 +380,7 @@ class IoTOrchestrator(IoTModule):
         card_id:      str,
         detected_ppe: list[str],
         missing_ppe:  list[str],
+        confidences:  dict[str, float],
     ) -> None:
         """Keeps gate closed and logs a FAIL decision."""
         self._set_state(SystemState.DENIED)
@@ -364,18 +388,9 @@ class IoTOrchestrator(IoTModule):
             "_deny_access: FAIL — %s, missing: %s", worker.worker_name, missing_ppe
         )
 
-        self._display.show_denied(missing_ppe)
-        
-        # Build detections list
-        detections = []
-        for ppe_item in worker.required_ppe:
-            was_detected = ppe_item.item_key in detected_ppe
-            detections.append(DetectionItem(
-                ppe_item_id=ppe_item.id,
-                was_required=True,
-                was_detected=was_detected,
-                confidence=0.99  # Mocked or retrieved from AI result
-            ))
+        self._display.notify_fail(worker, detected_ppe, missing_ppe)
+
+        detections = self._build_detection_items(worker, detected_ppe, confidences)
 
         self._backend.log_entry(EntryLog(
             card_id=card_id,
@@ -388,6 +403,24 @@ class IoTOrchestrator(IoTModule):
         ))
 
         time.sleep(self._config.denied_timeout_ms / 1000.0)
+
+    @staticmethod
+    def _build_detection_items(
+        worker:       WorkerInfo,
+        detected_ppe: list[str],
+        confidences:  dict[str, float],
+    ) -> list[DetectionItem]:
+        """Builds per-item DetectionItem records carrying real AI confidence."""
+        items: list[DetectionItem] = []
+        for ppe_item in worker.required_ppe:
+            was_detected = ppe_item.item_key in detected_ppe
+            items.append(DetectionItem(
+                ppe_item_id=ppe_item.id,
+                was_required=True,
+                was_detected=was_detected,
+                confidence=confidences.get(ppe_item.item_key) if was_detected else None,
+            ))
+        return items
 
     # =========================================================================
     # Internal: utilities

@@ -82,7 +82,7 @@ def _serialize_detected_ppe(keys: List[str], worker: WorkerInfo) -> List[Dict[st
             })
     return out
 
-class WebSocketDisplayNotifier:
+class WebSocketDisplayNotifier(DisplayClient):
     """
     Non-blocking WebSocket notifier that pushes rich screen states to MOD-05
     following the DISPLAY_BRIDGE contract.
@@ -152,28 +152,6 @@ class WebSocketDisplayNotifier:
             "detected_ppe": _serialize_detected_ppe(detected_ppe, worker),
             "missing_ppe": _serialize_detected_ppe(missing_ppe, worker)
         })
-
-    # -------------------------------------------------------------------------
-    # Legacy fallbacks (if used as DisplayClient directly instead of Notifier)
-    # -------------------------------------------------------------------------
-    
-    def show_idle(self) -> None:
-        self.notify_idle()
-
-    def show_scanning(self) -> None:
-        self.notify_identifying("UKNOWN_UID")
-
-    def show_granted(self, worker_name: str) -> None:
-        self._send_payload("PASS", {"worker": {"full_name": worker_name, "id": -1, "role_name": "Unknown", "photo_url": None}})
-
-    def show_denied(self, missing_ppe: list[str]) -> None:
-        self._send_payload("FAIL", {
-            "worker": {"full_name": "Unknown", "id": -1, "role_name": "Unknown", "photo_url": None},
-            "missing_ppe": [{"id": -1, "item_key": ppe, "display_name": ppe, "icon_name": ppe} for ppe in missing_ppe]
-        })
-
-    def show_unknown_card(self) -> None:
-        self.notify_unknown_card("UNKNOWN_UID")
 
     # -------------------------------------------------------------------------
     # Background Worker

@@ -38,7 +38,7 @@ from requests.exceptions import RequestException
 from urllib3.util.retry import Retry
 
 from src.iot_core.interfaces.backend_client import BackendClient
-from src.iot_core.models import WorkerInfo, EntryLog, RequiredPpeItem
+from src.iot_core.models import WorkerInfo, EntryLog, RequiredPpeItem, SUPPORTED_PPE_KEYS
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +54,12 @@ class HttpBackendClient(BackendClient):
 
     Args:
         base_url: Root URL of the backend API, without trailing slash.
-                  e.g. "http://192.168.1.50:8000/api"
+                  e.g. "http://192.168.1.50:3000/api"
+
+    Note: RFID webhook owns port 8000 (HttpRfidReader); backend runs on :3000.
     """
 
-    def __init__(self, base_url: str = "http://localhost:8000/api") -> None:
+    def __init__(self, base_url: str = "http://localhost:3000/api") -> None:
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
         
@@ -145,6 +147,17 @@ class HttpBackendClient(BackendClient):
                     for ppe in ppe_data
                 ],
             )
+
+            # Boundary check: MOD-04 must return item_keys from SUPPORTED_PPE_KEYS.
+            # An unknown key here means a contract mismatch with MOD-01/MOD-04 and
+            # will silently fail the worker (missing_ppe will always include it).
+            for ppe in worker.required_ppe:
+                if ppe.item_key not in SUPPORTED_PPE_KEYS:
+                    logger.warning(
+                        "get_worker(%r): backend returned unsupported item_key %r "
+                        "(supported: %s). Inspection for this worker will fail.",
+                        card_id, ppe.item_key, SUPPORTED_PPE_KEYS,
+                    )
             logger.info(
                 "get_worker(%r): %s / %s (PPE: %s)",
                 card_id, worker.worker_name, worker.role, [p.item_key for p in worker.required_ppe],
@@ -197,8 +210,10 @@ class HttpBackendClient(BackendClient):
             "worker_id":          log.worker_id,
             "rfid_uid_scanned":   log.card_id,
             "result":             log.decision.name,
-            # MOD-04 Schema constraint: inspection_time_ms is mapped to INT4 in Prisma.
-            # Using seconds instead of milliseconds prevents integer overflow (500 Error).
+            # TODO(mod04-contract): field is named *_ms but value is seconds because
+            # MOD-04 Prisma uses INT4 (overflow at year 2038 in ms). Either rename
+            # the field on the MOD-04 side or widen the column to BIGINT. Do not
+            # silently switch one side; coordinate with MOD-04 first.
             "inspection_time_ms": int(time.time()),
             "camera_snapshot_url": None,
             "detections": [

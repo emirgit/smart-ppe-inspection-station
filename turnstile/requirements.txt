@@ -10,8 +10,8 @@ websocket-client
 # Computer vision
 opencv-python
 
-# AI inference
-onnxruntime
+# AI inference (YOLO11n exported to NCNN FP16, running on Raspberry Pi 5 CPU)
+ncnn
 numpy
 
 # Testing

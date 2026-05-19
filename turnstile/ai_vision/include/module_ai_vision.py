@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -10,14 +11,21 @@ MAX_DETECTIONS: int = 20
 CONFIDENCE_THRESHOLD: float = 0.50
 """Minimum confidence threshold — detections below this value are ignored."""
 
+NMS_IOU_THRESHOLD: float = 0.45
+"""IoU threshold used by non-maximum suppression to merge overlapping boxes."""
+
 FRAME_WIDTH: int = 640
 """Camera image width (pixels)."""
 
 FRAME_HEIGHT: int = 640
 """Camera image height (pixels)."""
 
-MODEL_PATH: str = "/home/pi/ppe_model/best.onnx"
-"""Model file path on Raspberry Pi."""
+# Default NCNN model file paths, resolved relative to this file so the defaults
+# work in both the dev tree and the on-Pi deployment layout.
+_MODEL_DIR: str = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "model"))
+PARAM_PATH: str = os.path.join(_MODEL_DIR, "best.param")
+BIN_PATH:   str = os.path.join(_MODEL_DIR, "best.bin")
+"""NCNN model file paths (.param topology + .bin weights)."""
 
 
 # =============================================================================
@@ -110,7 +118,7 @@ class DetectionResult:
             if item.ppe_class == PPEClass.NO_HELMET:
                 # helmet missing, deny access
     """
-    items:        list[DetectedPPE] = field(default_factory=list)
+    items:        list[PPEDetection] = field(default_factory=list)
     timestamp_ms: int  = 0      # Processing time (Unix milliseconds)
     success:      bool = False  # True if inference completed successfully
 
@@ -121,12 +129,20 @@ class DetectionResult:
 
 @dataclass
 class AIVisionConfig:
-    """Configuration parameters for init()."""
-    model_path:     str   = MODEL_PATH
+    """
+    Configuration parameters for init().
+
+    The inference engine is NCNN running YOLO11n exported with
+    `yolo export model=best.pt format=ncnn half=True`. FP16 is enabled
+    at runtime via NCNN options inside AIVisionImpl.init().
+    """
+    param_path:     str   = PARAM_PATH         # NCNN topology file (.param)
+    bin_path:       str   = BIN_PATH           # NCNN weights file (.bin)
     conf_threshold: float = CONFIDENCE_THRESHOLD
+    iou_threshold:  float = NMS_IOU_THRESHOLD
     input_width:    int   = FRAME_WIDTH
     input_height:   int   = FRAME_HEIGHT
-    use_hailo_npu:  bool  = True   # Use Hailo NPU if available; falls back to RPi CPU
+    num_threads:    int   = 4                  # CPU threads for NCNN extractor
 
 
 # =============================================================================
