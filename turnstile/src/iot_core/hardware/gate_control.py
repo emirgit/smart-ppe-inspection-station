@@ -162,3 +162,39 @@ class GateController:
             self._kit.servo[self._config.channel_arm2].angle = angle_deg
         except Exception as exc:
             logger.error("GateController: _set_angle(%d°) failed — %s", angle_deg, exc)
+
+
+# =============================================================================
+# CLASS: NO-OP GATE CONTROLLER  (development stub — explicit opt-in only)
+# =============================================================================
+
+class NoOpGateController:
+    """
+    Drop-in replacement for GateController for bench testing when the PCA9685
+    or servos are not connected. Logs each call but does no I/O.
+
+    **Do not use in production.** Enabled only by passing `--no-gate` to main.py.
+    """
+
+    def __init__(self, open_duration_s: float = 5.0) -> None:
+        self._open_duration_s = open_duration_s
+
+    @property
+    def open_duration_s(self) -> float:
+        return self._open_duration_s
+
+    def init(self) -> bool:
+        logger.warning(
+            "NoOpGateController active — gate hardware is NOT being driven. "
+            "Use this only for bench testing."
+        )
+        return True
+
+    def gate_open(self) -> None:
+        logger.info("NoOpGateController: gate_open() [no I/O]")
+
+    def gate_close(self) -> None:
+        logger.info("NoOpGateController: gate_close() [no I/O]")
+
+    def cleanup(self) -> None:
+        logger.info("NoOpGateController: cleanup() [no I/O]")

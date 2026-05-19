@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 import time
@@ -10,7 +11,7 @@ from src.iot_core.orchestrator import IoTOrchestrator
 from src.iot_core.interfaces.iot_module import IoTConfig
 
 # Import necessary components (verify class names match your files)
-from src.iot_core.hardware.gate_control import GateController
+from src.iot_core.hardware.gate_control import GateController, NoOpGateController
 from src.iot_core.api_clients.http_backend_client import HttpBackendClient
 from src.iot_core.api_clients.ws_display_client import WebSocketDisplayNotifier
 
@@ -25,22 +26,41 @@ from ai_vision.ai_vision import AIVisionImpl
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("MAIN")
 
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Smart PPE Inspection Station — MOD-03 IoT orchestrator."
+    )
+    parser.add_argument(
+        "--no-gate",
+        action="store_true",
+        help="Run without the PCA9685/servo hardware (uses NoOpGateController). "
+             "Bench testing only — gate commands are logged but not executed.",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = _parse_args()
     logger.info("Initializing Smart PPE Inspection Station...")
 
     # 1. Configure settings
     # If using the .env library (python-dotenv), you can call load_dotenv() here
     config = IoTConfig()
-    
+
     # 2. Initialize sub-components
     backend = HttpBackendClient(base_url="http://localhost:3000/api") # Backend IP
     display = WebSocketDisplayNotifier(ws_url="ws://localhost:8080")  # Display IP
-    
+
     # Select your RFID hardware (Mock or actual physical device)
     # rfid = RfidSpiReader()
     rfid = HttpRfidReader() # Will automatically start the server on port 8000 based on its internal init
-    
-    gate = GateController() # Pass GPIO pin number as parameter if necessary
+
+    if args.no_gate:
+        logger.warning("--no-gate flag set: using NoOpGateController (no I2C/servo I/O).")
+        gate = NoOpGateController()
+    else:
+        gate = GateController() # Pass GPIO pin number as parameter if necessary
     ai = AIVisionImpl()
 
     # 3. Wire components to the Orchestrator
