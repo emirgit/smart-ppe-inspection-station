@@ -33,6 +33,65 @@ import {
   TableHeader, TableRow,
 } from '@/components/ui/table'
 
+// ── Reactivate Dialog ─────────────────────────────────────
+function ReactivateDialog({ open, onOpenChange, worker, onSaved }: any) {
+  const [rfid, setRfid] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { if (open) setRfid('') }, [open])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!rfid.trim()) { toast.error('RFID kart UID gerekli.'); return }
+    setSaving(true)
+    try {
+      await api.updateWorker(worker.id, { rfid_card_uid: rfid.trim().toUpperCase() })
+      toast.success(`${worker.full_name} tekrar aktif edildi.`)
+      onSaved()
+      onOpenChange(false)
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Çalışanı Tekrar Aktif Et</DialogTitle>
+          <DialogDescription>
+            <strong>{worker?.full_name}</strong> deaktif edildiğinde RFID kartı serbest bırakıldı.
+            Tekrar aktif etmek için yeni bir RFID kart UID girin.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <div className="space-y-1.5">
+            <Label>Yeni RFID Kart UID</Label>
+            <Input
+              value={rfid}
+              onChange={e => setRfid(e.target.value.toUpperCase())}
+              placeholder="A1B2C3D4"
+              maxLength={20}
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">
+              Kartı okutun veya manuel girin.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>İptal</Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Aktif ediliyor...' : 'Aktif Et'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Worker Dialog ─────────────────────────────────────────
 function WorkerDialog({ open, onOpenChange, worker, roles, onSaved }: any) {
   const isEdit = !!worker
@@ -72,25 +131,22 @@ function WorkerDialog({ open, onOpenChange, worker, roles, onSaved }: any) {
     try {
       const body = { ...data, role_id: Number(data.role_id) }
       let saved: any
-
       if (isEdit) {
         saved = await api.updateWorker(worker.id, body)
-        // Fotoğraf işlemleri
         if (removePhoto && worker.photo_url) {
           await api.deleteWorkerPhoto(worker.id).catch(() => {})
         } else if (photoFile) {
-          await api.uploadWorkerPhoto(worker.id, photoFile).catch(() => {})
+          await api.uploadWorkerPhoto(worker.id, photoFile)
         }
       } else {
         saved = await api.createWorker(body)
         if (photoFile && saved.data?.id) {
-          await api.uploadWorkerPhoto(saved.data.id, photoFile).catch(() => {})
+          await api.uploadWorkerPhoto(saved.data.id, photoFile)
         }
       }
-
       toast.success(isEdit ? 'Çalışan güncellendi.' : 'Çalışan eklendi.')
-      onSaved()
       onOpenChange(false)
+      await onSaved()
     } catch (e: any) {
       toast.error(e.message)
     }
@@ -106,9 +162,7 @@ function WorkerDialog({ open, onOpenChange, worker, roles, onSaved }: any) {
           <DialogTitle>{isEdit ? 'Çalışanı Düzenle' : 'Yeni Çalışan Ekle'}</DialogTitle>
           <DialogDescription>Çalışan bilgilerini doldurun.</DialogDescription>
         </DialogHeader>
-
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-2">
-          {/* Fotoğraf */}
           <div className="flex items-center gap-4">
             <div className="relative">
               <Avatar className="h-16 w-16">
@@ -136,18 +190,15 @@ function WorkerDialog({ open, onOpenChange, worker, roles, onSaved }: any) {
             </div>
           </div>
 
-          {/* Alanlar */}
           <div className="space-y-1.5">
             <Label>Ad Soyad</Label>
             <Input {...register('full_name', { required: true })} placeholder="Ahmet Yılmaz" />
           </div>
-
           <div className="space-y-1.5">
             <Label>RFID Kart UID</Label>
-            <Input {...register('rfid_card_uid', { required: !isEdit })} placeholder="A1B2C3D4" maxLength={20} />
+            <Input {...register('rfid_card_uid')} placeholder="A1B2C3D4" maxLength={20} />
             {isEdit && <p className="text-xs text-muted-foreground">Boş bırakılırsa RFID değişmez.</p>}
           </div>
-
           <div className="space-y-1.5">
             <Label>Rol</Label>
             <Select value={roleId} onValueChange={v => setValue('role_id', v)}>
@@ -159,7 +210,6 @@ function WorkerDialog({ open, onOpenChange, worker, roles, onSaved }: any) {
               </SelectContent>
             </Select>
           </div>
-
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>İptal</Button>
             <Button type="submit" disabled={isSubmitting}>
@@ -183,10 +233,9 @@ export function Workers() {
   const [filterActive, setFilterActive] = useState('all')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editWorker, setEditWorker] = useState<any>(null)
-
-  // Alert dialog state
-  type ActionType = 'deactivate' | 'reactivate' | 'hardDelete'
-  const [actionTarget, setActionTarget] = useState<{ worker: any; type: ActionType } | null>(null)
+  const [reactivateTarget, setReactivateTarget] = useState<any>(null)
+  const [deactivateTarget, setDeactivateTarget] = useState<any>(null)
+  const [hardDeleteTarget, setHardDeleteTarget] = useState<any>(null)
 
   async function load() {
     setLoading(true); setError(null)
@@ -199,25 +248,22 @@ export function Workers() {
 
   useEffect(() => { load() }, [])
 
-  async function handleAction() {
-    if (!actionTarget) return
-    const { worker, type } = actionTarget
+  async function handleDeactivate() {
+    if (!deactivateTarget) return
     try {
-      if (type === 'deactivate') {
-        await api.softDeleteWorker(worker.id)
-        toast.success(`${worker.full_name} deaktif edildi.`)
-      } else if (type === 'reactivate') {
-        await api.reactivateWorker(worker.id)
-        toast.success(`${worker.full_name} tekrar aktif edildi.`)
-      } else if (type === 'hardDelete') {
-        await api.hardDeleteWorker(worker.id)
-        toast.success(`${worker.full_name} kalıcı olarak silindi.`)
-      }
-      setActionTarget(null)
-      load()
-    } catch (e: any) {
-      toast.error(e.message)
-    }
+      await api.softDeleteWorker(deactivateTarget.id)
+      toast.success(`${deactivateTarget.full_name} deaktif edildi.`)
+      setDeactivateTarget(null); load()
+    } catch (e: any) { toast.error(e.message) }
+  }
+
+  async function handleHardDelete() {
+    if (!hardDeleteTarget) return
+    try {
+      await api.hardDeleteWorker(hardDeleteTarget.id)
+      toast.success(`${hardDeleteTarget.full_name} kalıcı olarak silindi.`)
+      setHardDeleteTarget(null); load()
+    } catch (e: any) { toast.error(e.message) }
   }
 
   const filtered = workers.filter((w: any) => {
@@ -229,39 +275,13 @@ export function Workers() {
     return true
   })
 
-  // Alert dialog metinleri
-  const actionTexts: Record<ActionType, { title: string; desc: string; btnLabel: string; btnClass: string }> = {
-    deactivate: {
-      title: 'Çalışanı deaktif et?',
-      desc: `${actionTarget?.worker?.full_name} sisteme giriş yapamaz hale gelecek. RFID kartı serbest kalır.`,
-      btnLabel: 'Deaktif Et',
-      btnClass: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-    },
-    reactivate: {
-      title: 'Çalışanı tekrar aktif et?',
-      desc: `${actionTarget?.worker?.full_name} sisteme giriş yapabilir hale gelecek. Yeni bir RFID kart atanması gerekebilir.`,
-      btnLabel: 'Aktif Et',
-      btnClass: '',
-    },
-    hardDelete: {
-      title: 'Kalıcı olarak sil?',
-      desc: `${actionTarget?.worker?.full_name} veritabanından tamamen silinecek. Bu işlem geri alınamaz.`,
-      btnLabel: 'Kalıcı Sil',
-      btnClass: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-    },
-  }
-
-  const currentAction = actionTarget ? actionTexts[actionTarget.type] : null
-
   return (
     <>
       <Header fixed>
         <div className="flex items-center gap-2 ms-auto">
-          <ThemeSwitch />
-          <ProfileDropdown />
+          <ThemeSwitch /><ProfileDropdown />
         </div>
       </Header>
-
       <Main>
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold tracking-tight">Çalışanlar</h1>
@@ -277,24 +297,16 @@ export function Workers() {
           </div>
         )}
 
-        {/* Filtreler */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center mb-4">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="İsim veya RFID ara..."
-              className="pl-8"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+            <Input placeholder="İsim veya RFID ara..." className="pl-8" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <Select value={filterRole} onValueChange={setFilterRole}>
             <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tüm Roller</SelectItem>
-              {roles.map((r: any) => (
-                <SelectItem key={r.id} value={String(r.id)}>{r.role_name}</SelectItem>
-              ))}
+              {roles.map((r: any) => <SelectItem key={r.id} value={String(r.id)}>{r.role_name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={filterActive} onValueChange={setFilterActive}>
@@ -307,7 +319,6 @@ export function Workers() {
           </Select>
         </div>
 
-        {/* Tablo */}
         <div className="rounded-md border">
           <Table>
             <TableHeader>
@@ -325,24 +336,16 @@ export function Workers() {
               {loading
                 ? Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 7 }).map((_, j) => (
-                      <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
-                    ))}
+                    {Array.from({ length: 7 }).map((_, j) => <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>)}
                   </TableRow>
                 ))
                 : filtered.length === 0
-                  ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        {search ? 'Arama sonucu bulunamadı.' : 'Henüz çalışan yok.'}
-                      </TableCell>
-                    </TableRow>
-                  )
+                  ? <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">{search ? 'Arama sonucu bulunamadı.' : 'Henüz çalışan yok.'}</TableCell></TableRow>
                   : filtered.map((w: any) => (
                     <TableRow key={w.id} className={!w.is_active ? 'opacity-60' : ''}>
                       <TableCell>
                         <Avatar className="h-8 w-8">
-                          <AvatarImage src={w.photo_url || ''} />
+                          <AvatarImage src={w.photo_url ? `${w.photo_url}?t=${new Date(w.updated_at || w.created_at).getTime()}` : ''} />
                           <AvatarFallback className="text-xs">
                             {w.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
                           </AvatarFallback>
@@ -366,43 +369,25 @@ export function Workers() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          {/* Düzenle */}
-                          <Button
-                            variant="ghost" size="icon" className="h-8 w-8"
-                            title="Düzenle"
-                            onClick={() => { setEditWorker(w); setDialogOpen(true) }}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-
-                          {/* Deaktif / Reaktif */}
+                          {w.is_active && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8" title="Düzenle"
+                              onClick={() => { setEditWorker(w); setDialogOpen(true) }}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                           {w.is_active
-                            ? (
-                              <Button
-                                variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
-                                title="Deaktif Et"
-                                onClick={() => setActionTarget({ worker: w, type: 'deactivate' })}
-                              >
+                            ? <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Deaktif Et"
+                                onClick={() => setDeactivateTarget(w)}>
                                 <UserX className="h-3.5 w-3.5" />
                               </Button>
-                            ) : (
-                              <Button
-                                variant="ghost" size="icon" className="h-8 w-8 text-green-600 hover:text-green-600"
-                                title="Tekrar Aktif Et"
-                                onClick={() => setActionTarget({ worker: w, type: 'reactivate' })}
-                              >
+                            : <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 hover:text-green-600" title="Tekrar Aktif Et"
+                                onClick={() => setReactivateTarget(w)}>
                                 <UserCheck className="h-3.5 w-3.5" />
                               </Button>
-                            )
                           }
-
-                          {/* Kalıcı Sil — sadece pasif çalışanlarda */}
                           {!w.is_active && (
-                            <Button
-                              variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
-                              title="Kalıcı Sil"
-                              onClick={() => setActionTarget({ worker: w, type: 'hardDelete' })}
-                            >
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Kalıcı Sil"
+                              onClick={() => setHardDeleteTarget(w)}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           )}
@@ -414,32 +399,38 @@ export function Workers() {
             </TableBody>
           </Table>
         </div>
-
         <p className="text-xs text-muted-foreground mt-2">{filtered.length} çalışan</p>
 
-        {/* Dialogs */}
-        <WorkerDialog
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-          worker={editWorker}
-          roles={roles}
-          onSaved={load}
-        />
+        <WorkerDialog open={dialogOpen} onOpenChange={setDialogOpen} worker={editWorker} roles={roles} onSaved={load} />
 
-        <AlertDialog open={!!actionTarget} onOpenChange={v => !v && setActionTarget(null)}>
+        <ReactivateDialog open={!!reactivateTarget} onOpenChange={v => !v && setReactivateTarget(null)} worker={reactivateTarget} onSaved={load} />
+
+        <AlertDialog open={!!deactivateTarget} onOpenChange={v => !v && setDeactivateTarget(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{currentAction?.title}</AlertDialogTitle>
-              <AlertDialogDescription>{currentAction?.desc}</AlertDialogDescription>
+              <AlertDialogTitle>Çalışanı deaktif et?</AlertDialogTitle>
+              <AlertDialogDescription>
+                <strong>{deactivateTarget?.full_name}</strong> sisteme giriş yapamaz hale gelecek. RFID kartı serbest kalır, başka bir çalışana atanabilir.
+              </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>İptal</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleAction}
-                className={currentAction?.btnClass}
-              >
-                {currentAction?.btnLabel}
-              </AlertDialogAction>
+              <AlertDialogAction onClick={handleDeactivate} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Deaktif Et</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={!!hardDeleteTarget} onOpenChange={v => !v && setHardDeleteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Kalıcı olarak sil?</AlertDialogTitle>
+              <AlertDialogDescription>
+                <strong>{hardDeleteTarget?.full_name}</strong> veritabanından tamamen silinecek. Bu işlem geri alınamaz.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>İptal</AlertDialogCancel>
+              <AlertDialogAction onClick={handleHardDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Kalıcı Sil</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

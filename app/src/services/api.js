@@ -222,8 +222,12 @@ const realApi = {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       body: formData,
     })
-    const json = await res.json()
-    if (!res.ok) throw new ApiError(res.status, json.error?.message || 'Fotoğraf yüklenemedi')
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      throw new ApiError(res.status, json.error?.message || 'Fotoğraf yüklenemedi')
+    }
+    if (res.status === 204) return { success: true }
+    const json = await res.json().catch(() => ({ success: true }))
     return json
   },
   deleteWorkerPhoto(id)  { return apiFetch(`/api/workers/${id}/photo`, { method: 'DELETE' }) },
