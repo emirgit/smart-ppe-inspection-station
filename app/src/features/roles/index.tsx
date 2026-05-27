@@ -170,7 +170,7 @@ export function Roles() {
                         key={r.id}
                         role={r}
                         ppeItems={ppeItems}
-                        onEdit={r => { setEditRole(r); setRoleDialog(true) }}
+                        onEdit={(r: any) => { setEditRole(r); setRoleDialog(true) }}
                         onDelete={setDeleteTarget}
                         onPpeChange={load}
                       />

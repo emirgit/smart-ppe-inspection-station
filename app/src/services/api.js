@@ -16,6 +16,12 @@ function getToken() {
   return localStorage.getItem(TOKEN_KEY)
 }
 
+export function resolveAssetUrl(value) {
+  if (!value) return ''
+  if (/^(https?:|blob:|data:)/i.test(value)) return value
+  return `${BASE_URL}${value.startsWith('/') ? value : `/${value}`}`
+}
+
 async function apiFetch(path, options = {}) {
   const token = getToken()
   const headers = { 'Content-Type': 'application/json', ...options.headers }
@@ -56,6 +62,16 @@ export const authApi = {
     })
     const json = await res.json()
     if (!res.ok || !json.success) throw new ApiError(res.status, json.error?.message || 'Giriş başarısız')
+    return json
+  },
+  async signup(name, email, password) {
+    const res = await fetch(`${BASE_URL}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password }),
+    })
+    const json = await res.json()
+    if (!res.ok || !json.success) throw new ApiError(res.status, json.error?.message || 'Kayıt başarısız')
     return json
   },
   async me() {

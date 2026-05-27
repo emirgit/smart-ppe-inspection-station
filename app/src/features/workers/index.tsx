@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { api } from '@/services/api'
+import { api, resolveAssetUrl } from '@/services/api'
 import { toast } from 'sonner'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -92,6 +92,13 @@ function ReactivateDialog({ open, onOpenChange, worker, onSaved }: any) {
   )
 }
 
+function cacheBustedPhotoUrl(photoUrl?: string | null, timestamp?: string | null) {
+  const resolved = resolveAssetUrl(photoUrl)
+  if (!resolved) return ''
+  const marker = timestamp ? new Date(timestamp).getTime() : Date.now()
+  return `${resolved}${resolved.includes('?') ? '&' : '?'}t=${marker}`
+}
+
 // ── Worker Dialog ─────────────────────────────────────────
 function WorkerDialog({ open, onOpenChange, worker, roles, onSaved }: any) {
   const isEdit = !!worker
@@ -166,7 +173,7 @@ function WorkerDialog({ open, onOpenChange, worker, roles, onSaved }: any) {
           <div className="flex items-center gap-4">
             <div className="relative">
               <Avatar className="h-16 w-16">
-                <AvatarImage src={currentPhoto || ''} />
+                <AvatarImage src={resolveAssetUrl(currentPhoto) || ''} />
                 <AvatarFallback className="text-lg">{initials}</AvatarFallback>
               </Avatar>
               {currentPhoto && (
@@ -345,7 +352,7 @@ export function Workers() {
                     <TableRow key={w.id} className={!w.is_active ? 'opacity-60' : ''}>
                       <TableCell>
                         <Avatar className="h-8 w-8">
-                          <AvatarImage src={w.photo_url ? `${w.photo_url}?t=${new Date(w.updated_at || w.created_at).getTime()}` : ''} />
+                          <AvatarImage src={cacheBustedPhotoUrl(w.photo_url, w.updated_at || w.created_at)} />
                           <AvatarFallback className="text-xs">
                             {w.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
                           </AvatarFallback>
@@ -403,7 +410,7 @@ export function Workers() {
 
         <WorkerDialog open={dialogOpen} onOpenChange={setDialogOpen} worker={editWorker} roles={roles} onSaved={load} />
 
-        <ReactivateDialog open={!!reactivateTarget} onOpenChange={v => !v && setReactivateTarget(null)} worker={reactivateTarget} onSaved={load} />
+        <ReactivateDialog open={!!reactivateTarget} onOpenChange={(v: boolean) => !v && setReactivateTarget(null)} worker={reactivateTarget} onSaved={load} />
 
         <AlertDialog open={!!deactivateTarget} onOpenChange={v => !v && setDeactivateTarget(null)}>
           <AlertDialogContent>

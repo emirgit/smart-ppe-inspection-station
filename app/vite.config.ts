@@ -21,6 +21,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      checks: { pluginTimings: false },
+    } as never,
+  },
   test: {
     silent: 'passed-only',
     unstubEnvs: true,

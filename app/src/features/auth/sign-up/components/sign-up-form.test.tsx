@@ -1,25 +1,45 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, type RenderResult } from 'vitest-browser-react'
 import { type Locator, userEvent } from 'vitest/browser'
 import { SignUpForm } from './sign-up-form'
 
 const FORM_MESSAGES = {
+  nameEmpty: 'Please enter your name.',
   emailEmpty: 'Please enter your email.',
   passwordEmpty: 'Please enter your password.',
   confirmPasswordEmpty: 'Please confirm your password.',
   passwordMismatch: "Passwords don't match.",
 } as const
 
-const toastPromise = vi.hoisted(() =>
-  vi.fn((p: Promise<unknown>, opts: { success?: () => unknown }) => {
-    p.then(() => opts.success?.())
-  })
-)
+const mocks = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  setToken: vi.fn(),
+  signup: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+}))
 
-vi.mock('sonner', () => ({ toast: { promise: toastPromise } }))
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
+  return {
+    ...actual,
+    useNavigate: () => mocks.navigate,
+  }
+})
+
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: () => ({ setToken: mocks.setToken }),
+}))
+
+vi.mock('@/services/api', () => ({
+  authApi: { signup: mocks.signup },
+}))
+
+vi.mock('sonner', () => ({ toast: { success: mocks.toastSuccess, error: mocks.toastError } }))
 
 describe('SignUpForm', () => {
   let screen: RenderResult
+  let nameInput: Locator
   let emailInput: Locator
   let passwordInput: Locator
   let confirmPasswordInput: Locator
@@ -27,19 +47,18 @@ describe('SignUpForm', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    mocks.signup.mockResolvedValue({ success: true, data: { token: 'new-token' } })
 
     screen = await render(<SignUpForm />)
+    nameInput = screen.getByRole('textbox', { name: /^Name$/i })
     emailInput = screen.getByRole('textbox', { name: /^Email$/i })
     passwordInput = screen.getByLabelText(/^Password$/i)
     confirmPasswordInput = screen.getByLabelText(/^Confirm Password$/i)
     submitButton = screen.getByRole('button', { name: /^Create Account$/i })
   })
 
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
   it('renders fields and submit button', async () => {
+    await expect.element(nameInput).toBeInTheDocument()
     await expect.element(emailInput).toBeInTheDocument()
     await expect.element(passwordInput).toBeInTheDocument()
     await expect.element(confirmPasswordInput).toBeInTheDocument()
@@ -49,6 +68,9 @@ describe('SignUpForm', () => {
   it('shows validation messages when submitting empty form', async () => {
     await userEvent.click(submitButton)
 
+    await expect
+      .element(screen.getByText(FORM_MESSAGES.nameEmpty))
+      .toBeInTheDocument()
     await expect
       .element(screen.getByText(FORM_MESSAGES.emailEmpty))
       .toBeInTheDocument()
@@ -61,6 +83,7 @@ describe('SignUpForm', () => {
   })
 
   it('shows a mismatch error when passwords do not match', async () => {
+    await userEvent.fill(nameInput, 'PPE Admin')
     await userEvent.fill(emailInput, 'a@b.com')
     await userEvent.fill(passwordInput, '1234567')
     await userEvent.fill(confirmPasswordInput, '7654321')
@@ -71,18 +94,18 @@ describe('SignUpForm', () => {
       .toBeInTheDocument()
   })
 
-  it('disables submit while submitting and re-enables after timeout', async () => {
-    vi.useFakeTimers()
-
+  it('creates an account and stores the returned token', async () => {
+    await userEvent.fill(nameInput, 'PPE Admin')
     await userEvent.fill(emailInput, 'a@b.com')
     await userEvent.fill(passwordInput, '1234567')
     await userEvent.fill(confirmPasswordInput, '1234567')
 
     await userEvent.click(submitButton)
-    await expect.element(submitButton).toBeDisabled()
 
-    await vi.advanceTimersByTimeAsync(2000)
-    await expect.element(submitButton).toBeEnabled()
-    expect(toastPromise).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(mocks.signup).toHaveBeenCalledOnce())
+    expect(mocks.signup).toHaveBeenCalledWith('PPE Admin', 'a@b.com', '1234567')
+    expect(mocks.setToken).toHaveBeenCalledWith('new-token')
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/' })
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('Account created.')
   })
 })
