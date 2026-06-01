@@ -19,7 +19,7 @@ Inter-module calls:
 ⚠️  NEW __init__ parameters (not defined in IoTModule ABC):
         gate   : GateController      — servo gate driver
         ai     : AIVisionModule      — MOD-01 inference wrapper
-        camera_device : int = 0      — OpenCV VideoCapture device index
+        camera_device : int = 0      — picamera2 camera number (CSI camera)
 
 ⚠️  TODO (MOD-01 integration):
         DetectionResult field name not yet confirmed with Zeynep's team.
@@ -38,9 +38,12 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import cv2
+
+if TYPE_CHECKING:
+    from picamera2 import Picamera2
 
 from src.iot_core.interfaces.iot_module import IoTModule, IoTConfig, SystemState
 from src.iot_core.interfaces.rfid_reader import RfidReader
@@ -67,7 +70,7 @@ class IoTOrchestrator(IoTModule):
         display       : DisplayClient implementation (WebSocket or mock).
         gate          : GateController for the servo-driven turnstile gate.
         ai            : AIVisionModule for PPE detection (MOD-01).
-        camera_device : OpenCV VideoCapture device index (default 0).
+        camera_device : picamera2 camera number for the CSI camera (default 0).
     """
 
     def __init__(
@@ -92,7 +95,7 @@ class IoTOrchestrator(IoTModule):
 
         self._running: bool         = False
         self._stop_event            = threading.Event()
-        self._cap:    Optional[cv2.VideoCapture] = None   # camera handle
+        self._cap:    Optional["Picamera2"] = None        # camera handle (libcamera)
 
     # =========================================================================
     # IoTModule interface
@@ -129,16 +132,38 @@ class IoTOrchestrator(IoTModule):
             return False
 
         # -- Camera ----------------------------------------------------------
-        self._cap = cv2.VideoCapture(self._camera_device)
-        if not self._cap.isOpened():
-            logger.error("init: cannot open camera device %d", self._camera_device)
+        # The Raspberry Pi 5 dropped the legacy V4L2 camera stack, so the CSI
+        # Camera Module V3 is only reachable through libcamera/picamera2.
+        # cv2.VideoCapture() can open a /dev/video* node but never delivers
+        # frames for the CSI sensor, which surfaced as "failed to capture
+        # frame from camera" downstream. picamera2 is imported lazily here so
+        # this module still imports on a non-Pi development machine.
+        try:
+            from picamera2 import Picamera2
+        except ImportError as exc:
+            logger.error("init: picamera2 not available (apt python3-picamera2) — %s", exc)
             return False
 
-        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH,  self._config.frame_width)
-        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._config.frame_height)
+        try:
+            self._cap = Picamera2(self._camera_device)
+            # "RGB888" yields a BGR-ordered NumPy array (libcamera naming
+            # quirk), matching what cv2.VideoCapture.read() used to return,
+            # so the downstream BGR->RGB conversion stays unchanged.
+            cam_config = self._cap.create_preview_configuration(
+                main={
+                    "size": (self._config.frame_width, self._config.frame_height),
+                    "format": "RGB888",
+                }
+            )
+            self._cap.configure(cam_config)
+            self._cap.start()
+        except Exception as exc:
+            logger.error("init: cannot open camera num=%d — %s", self._camera_device, exc)
+            self._cap = None
+            return False
 
         logger.info(
-            "init: camera device=%d resolution=%dx%d",
+            "init: camera num=%d resolution=%dx%d (picamera2)",
             self._camera_device,
             self._config.frame_width,
             self._config.frame_height,
@@ -192,8 +217,12 @@ class IoTOrchestrator(IoTModule):
             logger.warning("stop: display.stop() error — %s", exc)
 
         # Release camera
-        if self._cap and self._cap.isOpened():
-            self._cap.release()
+        if self._cap is not None:
+            try:
+                self._cap.stop()
+                self._cap.close()
+            except Exception as exc:
+                logger.warning("stop: camera release error — %s", exc)
             self._cap = None
 
         # Release AI inference resources
@@ -296,12 +325,19 @@ class IoTOrchestrator(IoTModule):
                 bounding box observed for that class on this frame.
             On any failure, both are empty / empty-dict.
         """
-        if self._cap is None or not self._cap.isOpened():
+        if self._cap is None:
             logger.error("_run_inspection: camera not available")
             return [], {}
 
-        ret, raw_frame = self._cap.read()
-        if not ret or raw_frame is None:
+        # picamera2.capture_array() raises on failure instead of returning a
+        # (ret, frame) tuple, so the capture is guarded and routed into the
+        # same empty-result path the OpenCV code used.
+        try:
+            raw_frame = self._cap.capture_array("main")
+        except Exception as exc:
+            logger.error("_run_inspection: failed to capture frame from camera — %s", exc)
+            return [], {}
+        if raw_frame is None:
             logger.error("_run_inspection: failed to capture frame from camera")
             return [], {}
 
