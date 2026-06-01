@@ -3,6 +3,8 @@ Test suite for IoTOrchestrator state machine logic.
 """
 import pytest
 from unittest.mock import MagicMock, patch
+import sys
+import types
 
 import numpy as np
 
@@ -28,32 +30,32 @@ def orchestrator(mock_gate_controller, mock_ai_vision):
     display = MagicMock()
 
     with patch("src.iot_core.orchestrator.cv2") as mock_cv2:
-        mock_cap = MagicMock()
-        mock_cap.isOpened.return_value = True
-        # Return a real-ish RGB frame so _run_inspection's cvtColor path works.
         fake_frame = np.zeros((10, 10, 3), dtype=np.uint8)
-        mock_cap.read.return_value = (True, fake_frame)
-        mock_cv2.VideoCapture.return_value = mock_cap
         mock_cv2.cvtColor.return_value = fake_frame
         mock_cv2.COLOR_BGR2RGB = 0
+        mock_cap = MagicMock()
+        mock_cap.create_preview_configuration.return_value = {"main": {}}
+        mock_cap.capture_array.return_value = fake_frame
+        mock_picamera2_module = types.SimpleNamespace(Picamera2=MagicMock(return_value=mock_cap))
 
-        orch = IoTOrchestrator(
-            rfid=rfid,
-            backend=backend,
-            display=display,
-            gate=mock_gate_controller,
-            ai=mock_ai_vision,
-        )
+        with patch.dict(sys.modules, {"picamera2": mock_picamera2_module}):
+            orch = IoTOrchestrator(
+                rfid=rfid,
+                backend=backend,
+                display=display,
+                gate=mock_gate_controller,
+                ai=mock_ai_vision,
+            )
 
-        config = IoTConfig(denied_timeout_ms=10)
-        orch.init(config)
-        return orch
+            config = IoTConfig(denied_timeout_ms=10)
+            assert orch.init(config)
+            return orch
 
 
 def test_cycle_grant_access(orchestrator):
     """Worker wearing all required PPE: gate opens and PASS is logged."""
     orchestrator._rfid.read_card.return_value = "VALID_CARD"
-    worker = WorkerInfo(1, "Alperen Söylen", "Developer", [RequiredPpeItem(1, "HELMET")])
+    worker = WorkerInfo(1, "Alperen Söylen", "Developer", [RequiredPpeItem(1, "hard_hat")])
     orchestrator._backend.get_worker.return_value = worker
 
     orchestrator._cycle()
@@ -75,8 +77,8 @@ def test_cycle_deny_access_missing_ppe(orchestrator):
     """A required PPE missing: gate stays closed and FAIL is logged."""
     orchestrator._rfid.read_card.return_value = "VALID_CARD"
     worker = WorkerInfo(1, "Zeynep Etik", "Engineer", [
-        RequiredPpeItem(1, "HELMET"),
-        RequiredPpeItem(2, "GLOVES"),
+        RequiredPpeItem(1, "hard_hat"),
+        RequiredPpeItem(2, "gloves"),
     ])
     orchestrator._backend.get_worker.return_value = worker
 
@@ -92,11 +94,11 @@ def test_cycle_deny_access_missing_ppe(orchestrator):
     orchestrator._display.notify_fail.assert_called_once()
     fail_args = orchestrator._display.notify_fail.call_args[0]
     assert fail_args[0] is worker
-    assert fail_args[2] == ["GLOVES"]
+    assert fail_args[2] == ["gloves"]
 
     log_arg = orchestrator._backend.log_entry.call_args[0][0]
     assert log_arg.decision == AccessDecision.FAIL
-    assert log_arg.missing_ppe == ["GLOVES"]
+    assert log_arg.missing_ppe == ["gloves"]
 
     detections_by_id = {d.ppe_item_id: d for d in log_arg.detections}
     assert detections_by_id[1].was_detected is True

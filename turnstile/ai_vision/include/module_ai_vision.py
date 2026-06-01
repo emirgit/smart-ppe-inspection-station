@@ -45,14 +45,15 @@ class PPEClass(IntEnum):
     VEST      = 2   # Safety vest present
     BOOTS     = 3   # Safety boots present
     GOGGLES   = 4   # Protective goggles present
-    PERSON    = 5   # Worker / person detected
+    NONE      = 5   # No PPE-specific class in the training label
+    PERSON    = 6   # Worker / person detected
 
     # --- Negative classes (equipment missing) ---
-    NO_HELMET = 6   # Helmet missing  — ACCESS MUST BE BLOCKED
-    NO_GLOVES = 7   # Gloves missing
-    NO_VEST   = 8   # Vest missing    — ACCESS MUST BE BLOCKED
-    NO_BOOTS  = 9   # Boots missing
-    NO_GOGGLE = 10  # Goggles missing
+    NO_HELMET = 7   # Helmet missing, access must be blocked
+    NO_GOGGLE = 8   # Goggles missing
+    NO_GLOVES = 9   # Gloves missing
+    NO_BOOTS  = 10  # Boots missing
+    NO_VEST   = 11  # Vest missing, access must be blocked
 
 
 # =============================================================================

@@ -70,6 +70,29 @@ PPE_CLASS_TO_ITEM_KEY: dict[str, str] = {
 # Backend item_key strings that the IoT module understands.
 SUPPORTED_PPE_KEYS: tuple[str, ...] = tuple(PPE_CLASS_TO_ITEM_KEY.values())
 
+PPE_ITEM_KEY_ALIASES: dict[str, str] = {
+    "helmet": "hard_hat",
+    "hardhat": "hard_hat",
+    "hard_hat": "hard_hat",
+    "HELMET": "hard_hat",
+    "vest": "safety_vest",
+    "safety_vest": "safety_vest",
+    "VEST": "safety_vest",
+    "gloves": "gloves",
+    "GLOVES": "gloves",
+    "boots": "safety_boots",
+    "safety_boots": "safety_boots",
+    "BOOTS": "safety_boots",
+    "goggles": "safety_goggles",
+    "goggle": "safety_goggles",
+    "safety_goggles": "safety_goggles",
+    "GOGGLES": "safety_goggles",
+}
+
+
+def normalize_ppe_item_key(item_key: str) -> str:
+    return PPE_ITEM_KEY_ALIASES.get(item_key, item_key)
+
 
 # =============================================================================
 # ENUM: ACCESS DECISION

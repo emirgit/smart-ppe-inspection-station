@@ -355,16 +355,14 @@ class IoTOrchestrator(IoTModule):
                 logger.error("_run_inspection: AI returned failure result")
                 return [], {}
 
-            # Keep only positive PPE classes (HELMET..GOGGLES); discard PERSON
-            # and the NO_* negative classes — they do not contribute to the
+            # Keep only positive PPE classes (HELMET..GOGGLES); discard NONE,
+            # PERSON, and the NO_* negative classes. They do not contribute to the
             # "detected" set used for the compliance decision.
             # Map PPEClass enum names to the backend item_key strings
             # (e.g. "HELMET" → "hard_hat") using PPE_CLASS_TO_ITEM_KEY.
             detected_ppe: list[str] = []
             confidences: dict[str, float] = {}
             for item in result.items:
-                if item.ppe_class.value >= PPEClass.PERSON.value:
-                    continue
                 item_key = PPE_CLASS_TO_ITEM_KEY.get(item.ppe_class.name)
                 if item_key is None:
                     continue

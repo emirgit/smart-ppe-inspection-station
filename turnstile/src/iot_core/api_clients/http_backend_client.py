@@ -35,7 +35,13 @@ from requests.exceptions import RequestException
 from urllib3.util.retry import Retry
 
 from src.iot_core.interfaces.backend_client import BackendClient
-from src.iot_core.models import WorkerInfo, EntryLog, RequiredPpeItem, SUPPORTED_PPE_KEYS
+from src.iot_core.models import (
+    WorkerInfo,
+    EntryLog,
+    RequiredPpeItem,
+    SUPPORTED_PPE_KEYS,
+    normalize_ppe_item_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +122,7 @@ class HttpBackendClient(BackendClient):
                 required_ppe=[
                     RequiredPpeItem(
                         id=ppe["id"],
-                        item_key=ppe["item_key"],
+                        item_key=normalize_ppe_item_key(ppe["item_key"]),
                         display_name=ppe.get("display_name"),
                         icon_name=ppe.get("icon_name")
                     )

@@ -28,7 +28,36 @@ def test_get_worker_success(mock_get):
     assert worker.worker_name == "Ahmet Yılmaz"
     assert worker.role == "Şantiye Şefi"
     assert len(worker.required_ppe) == 1
-    assert worker.required_ppe[0].item_key == "HELMET"
+    assert worker.required_ppe[0].item_key == "hard_hat"
+
+
+@patch("requests.Session.get")
+def test_get_worker_normalizes_legacy_ppe_keys(mock_get):
+    """Backend alias keys are normalized to the canonical MOD-03 item_key values."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "success": True,
+        "data": {
+            "worker": {"id": 2, "full_name": "Kart Deneme2", "role_name": "Construction Worker"},
+            "required_ppe": [
+                {"id": 1, "item_key": "helmet", "display_name": "Hard Hat"},
+                {"id": 2, "item_key": "vest", "display_name": "Safety Vest"},
+                {"id": 3, "item_key": "gloves", "display_name": "Gloves"},
+            ],
+        },
+    }
+    mock_get.return_value = mock_response
+
+    client = HttpBackendClient(base_url="http://test")
+    worker = client.get_worker("821AE02A")
+
+    assert worker is not None
+    assert [ppe.item_key for ppe in worker.required_ppe] == [
+        "hard_hat",
+        "safety_vest",
+        "gloves",
+    ]
 
 
 @patch("requests.Session.get")
