@@ -119,3 +119,27 @@ def test_cycle_unknown_card(orchestrator):
 
     log_arg = orchestrator._backend.log_entry.call_args[0][0]
     assert log_arg.decision == AccessDecision.UNKNOWN_CARD
+
+
+def test_run_inspection_shows_annotated_camera_preview(orchestrator):
+    """Captured camera frame is displayed with AI detection annotations."""
+    orchestrator._ai.detect.return_value = DetectionResult(
+        items=[_det(PPEClass.VEST, 0.88)],
+        success=True,
+    )
+
+    with patch("src.iot_core.orchestrator.cv2") as mock_cv2:
+        fake_frame = np.zeros((10, 10, 3), dtype=np.uint8)
+        mock_cv2.cvtColor.return_value = fake_frame
+        mock_cv2.COLOR_BGR2RGB = 0
+        mock_cv2.FONT_HERSHEY_SIMPLEX = 0
+
+        detected_ppe, confidences = orchestrator._run_inspection()
+
+        assert detected_ppe == ["safety_vest"]
+        assert confidences["safety_vest"] == pytest.approx(0.88, abs=1e-3)
+        orchestrator._cap.capture_array.assert_called_once_with("main")
+        mock_cv2.rectangle.assert_called()
+        mock_cv2.putText.assert_called()
+        mock_cv2.imshow.assert_called_once()
+        mock_cv2.waitKey.assert_called_once_with(1)

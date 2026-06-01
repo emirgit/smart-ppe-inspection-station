@@ -355,6 +355,8 @@ class IoTOrchestrator(IoTModule):
                 logger.error("_run_inspection: AI returned failure result")
                 return [], {}
 
+            self._show_detection_preview(raw_frame, result)
+
             # Keep only positive PPE classes (HELMET..GOGGLES); discard NONE,
             # PERSON, and the NO_* negative classes. They do not contribute to the
             # "detected" set used for the compliance decision.
@@ -379,6 +381,48 @@ class IoTOrchestrator(IoTModule):
         except Exception as exc:
             logger.error("_run_inspection: AI detection failed — %s", exc)
             return [], {}
+
+    def _show_detection_preview(self, raw_frame, result) -> None:
+        """
+        Displays the captured camera frame with AI detection boxes.
+
+        The preview is best-effort only. A display backend failure must not
+        change the inspection decision or stop the gate control loop.
+        """
+        try:
+            preview = raw_frame.copy()
+            frame_h, frame_w = preview.shape[:2]
+
+            for item in result.items:
+                x_center = int(item.x_center * frame_w)
+                y_center = int(item.y_center * frame_h)
+                box_w = int(item.width * frame_w)
+                box_h = int(item.height * frame_h)
+                x1 = max(0, x_center - box_w // 2)
+                y1 = max(0, y_center - box_h // 2)
+                x2 = min(frame_w - 1, x_center + box_w // 2)
+                y2 = min(frame_h - 1, y_center + box_h // 2)
+
+                item_key = PPE_CLASS_TO_ITEM_KEY.get(item.ppe_class.name, item.ppe_class.name.lower())
+                label = f"{item_key} {item.confidence:.2f}"
+                color = (0, 200, 0) if item_key in PPE_CLASS_TO_ITEM_KEY.values() else (0, 165, 255)
+
+                cv2.rectangle(preview, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(
+                    preview,
+                    label,
+                    (x1, max(15, y1 - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    color,
+                    1,
+                    cv2.LINE_AA,
+                )
+
+            cv2.imshow("Smart PPE Inspection Station - Detections", preview)
+            cv2.waitKey(1)
+        except Exception as exc:
+            logger.warning("_show_detection_preview: preview unavailable — %s", exc)
 
     # =========================================================================
     # Internal: grant / deny helpers
