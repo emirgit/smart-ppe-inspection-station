@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Turnstile Display</string>
+    <string name="title_activity_main">Turnstile Display</string>
+    <string name="package_name">com.group11.turnstile</string>
+    <string name="custom_url_scheme">com.group11.turnstile</string>
+</resources>
