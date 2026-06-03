@@ -1,0 +1,19 @@
+node_modules/
+.env
+.env.*
+*.log
+
+# Prisma generated client
+src/generated/
+
+# OS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+
+*.pdf
+/module4_backend_headers/
+
+/coverage/
