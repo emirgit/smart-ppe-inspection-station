@@ -50,7 +50,7 @@ def main():
 
     # 2. Initialize sub-components
     backend = HttpBackendClient()  # default: Heroku deployment
-    display = WebSocketDisplayNotifier(ws_url="ws://localhost:8080")  # Display IP
+    display = WebSocketDisplayNotifier(host="0.0.0.0", port=8080, path="/ws/display")
 
     # Select your RFID hardware (Mock or actual physical device)
     # rfid = RfidSpiReader()
