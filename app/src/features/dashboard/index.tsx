@@ -58,7 +58,6 @@ export function Dashboard() {
       <Header fixed>
         <div className="flex items-center gap-2 ms-auto">
           <ThemeSwitch />
-          <ProfileDropdown />
         </div>
       </Header>
       <Main>

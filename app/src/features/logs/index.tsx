@@ -70,7 +70,6 @@ export function Logs() {
       <Header fixed>
         <div className='ms-auto flex items-center gap-2'>
           <ThemeSwitch />
-          <ProfileDropdown />
         </div>
       </Header>
       <Main>
@@ -159,9 +158,13 @@ export function Logs() {
                           {log.worker_name || 'Bilinmeyen Kart'}
                         </TableCell>
                         <TableCell>
-                          <code className='rounded bg-muted px-1.5 py-0.5 text-xs'>
-                            {log.rfid_uid_scanned}
-                          </code>
+                          {log.result === 'UNKNOWN_CARD'
+                            ? <span className='text-sm text-muted-foreground'>-</span>
+                            : (
+                                <code className='rounded bg-muted px-1.5 py-0.5 text-xs'>
+                                  {log.rfid_uid_scanned}
+                                </code>
+                              )}
                         </TableCell>
                         <TableCell>
                           <Badge variant={resultVariant(log.result)}>

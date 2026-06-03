@@ -138,7 +138,7 @@ export function Roles() {
   return (
     <>
       <Header fixed>
-        <div className="flex items-center gap-2 ms-auto"><ThemeSwitch /><ProfileDropdown /></div>
+        <div className="flex items-center gap-2 ms-auto"><ThemeSwitch /></div>
       </Header>
       <Main>
         <div className="mb-6 space-y-8">

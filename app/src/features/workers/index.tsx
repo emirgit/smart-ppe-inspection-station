@@ -286,7 +286,7 @@ export function Workers() {
     <>
       <Header fixed>
         <div className="flex items-center gap-2 ms-auto">
-          <ThemeSwitch /><ProfileDropdown />
+          <ThemeSwitch />
         </div>
       </Header>
       <Main>

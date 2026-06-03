@@ -29,6 +29,24 @@ function getRange(days: number) {
   }
 }
 
+function buildDailyDataFromLogs(logs: any[]) {
+  const dailyMap: Record<string, { date: string; pass: number; fail: number; total: number }> = {}
+  logs.forEach((log) => {
+    const date = (log.scanned_at || '').split('T')[0]
+    if (!date) return
+    if (!dailyMap[date]) dailyMap[date] = { date, pass: 0, fail: 0, total: 0 }
+    if (log.result === 'PASS') dailyMap[date].pass++
+    if (log.result === 'FAIL') dailyMap[date].fail++
+    dailyMap[date].total++
+  })
+  return Object.values(dailyMap)
+    .map(d => ({
+      ...d,
+      rate: d.pass + d.fail > 0 ? Math.round((d.pass / (d.pass + d.fail)) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
+
 // ── Custom Tooltip — dark mode uyumlu ────────────────────
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
@@ -71,7 +89,14 @@ export function Analytics() {
     setLoading(true); setError(null)
     try {
       const res = await api.getEntryLogStats(getRange(days))
-      setStats(res.data)
+      let data: any = res.data || {}
+      if (!data?.daily_data?.length) {
+        const today = new Date().toISOString().split('T')[0]
+        const logsRes = await api.listEntryLogs({ start_date: today, end_date: today })
+        const daily_data = buildDailyDataFromLogs(logsRes.data || [])
+        data = { ...data, daily_data }
+      }
+      setStats(data)
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }
@@ -82,7 +107,7 @@ export function Analytics() {
     <>
       <Header fixed>
         <div className="flex items-center gap-2 ms-auto">
-          <ThemeSwitch /><ProfileDropdown />
+          <ThemeSwitch />
         </div>
       </Header>
       <Main>
@@ -208,8 +233,8 @@ export function Analytics() {
                             </span>
                           )}
                         />
-                        <Bar dataKey="pass" name="pass" fill="#22c55e" radius={[2, 2, 0, 0]} />
                         <Bar dataKey="fail" name="fail" fill="#ef4444" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="pass" name="pass" fill="#22c55e" radius={[2, 2, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   )

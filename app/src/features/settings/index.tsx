@@ -21,7 +21,6 @@ export function Settings() {
       <Header>
         <div className='ms-auto flex items-center gap-2'>
           <ThemeSwitch />
-          <ProfileDropdown />
         </div>
       </Header>
 

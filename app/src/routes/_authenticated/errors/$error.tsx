@@ -33,7 +33,6 @@ function RouteComponent() {
         <Search className='me-auto' />
         <ThemeSwitch />
         <ConfigDrawer />
-        <ProfileDropdown />
       </Header>
       <div className='flex-1 [&>div]:h-full'>
         <ErrorComponent />
