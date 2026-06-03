@@ -47,6 +47,26 @@ function buildDailyDataFromLogs(logs: any[]) {
     .sort((a, b) => a.date.localeCompare(b.date))
 }
 
+async function fetchEntryLogsForRange(range: { start_date: string; end_date: string }) {
+  const all: any[] = []
+  const pageSize = 500
+  let offset = 0
+  let total = Number.POSITIVE_INFINITY
+
+  while (all.length < total) {
+    const res = await api.listEntryLogs({ ...range, limit: pageSize, offset })
+    const data = res.data || []
+    all.push(...data)
+
+    if (typeof res.total === 'number') total = res.total
+    if (data.length === 0 || data.length < pageSize) break
+
+    offset += data.length
+  }
+
+  return all
+}
+
 // ── Custom Tooltip — dark mode uyumlu ────────────────────
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
@@ -84,19 +104,18 @@ export function Analytics() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [rangeDays, setRangeDays] = useState(30)
+  const axisTickColor = 'var(--axis-tick)'
 
   async function load(days: number) {
     setLoading(true); setError(null)
     try {
-      const res = await api.getEntryLogStats(getRange(days))
-      let data: any = res.data || {}
-      if (!data?.daily_data?.length) {
-        const today = new Date().toISOString().split('T')[0]
-        const logsRes = await api.listEntryLogs({ start_date: today, end_date: today })
-        const daily_data = buildDailyDataFromLogs(logsRes.data || [])
-        data = { ...data, daily_data }
-      }
-      setStats(data)
+      const range = getRange(days)
+      const [res, logs] = await Promise.all([
+        api.getEntryLogStats(range),
+        fetchEntryLogsForRange(range),
+      ])
+      const daily_data = buildDailyDataFromLogs(logs)
+      setStats({ ...(res.data || {}), daily_data })
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }
@@ -173,14 +192,14 @@ export function Analytics() {
                         <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                         <XAxis
                           dataKey="date"
-                          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                          tick={{ fontSize: 11, fill: axisTickColor }}
                           tickFormatter={(v: string) => v.slice(5)}
                           axisLine={{ stroke: 'hsl(var(--border))' }}
                           tickLine={{ stroke: 'hsl(var(--border))' }}
                         />
                         <YAxis
                           domain={[0, 100]}
-                          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                          tick={{ fontSize: 11, fill: axisTickColor }}
                           unit="%"
                           axisLine={{ stroke: 'hsl(var(--border))' }}
                           tickLine={{ stroke: 'hsl(var(--border))' }}
@@ -192,7 +211,8 @@ export function Analytics() {
                           name="Uyum"
                           stroke="hsl(var(--primary))"
                           strokeWidth={2}
-                          dot={false}
+                          dot={{ r: 3, strokeWidth: 1 }}
+                          activeDot={{ r: 5 }}
                         />
                       </LineChart>
                     </ResponsiveContainer>
@@ -215,13 +235,13 @@ export function Analytics() {
                         <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                         <XAxis
                           dataKey="date"
-                          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                          tick={{ fontSize: 11, fill: axisTickColor }}
                           tickFormatter={(v: string) => v.slice(5)}
                           axisLine={{ stroke: 'hsl(var(--border))' }}
                           tickLine={{ stroke: 'hsl(var(--border))' }}
                         />
                         <YAxis
-                          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                          tick={{ fontSize: 11, fill: axisTickColor }}
                           axisLine={{ stroke: 'hsl(var(--border))' }}
                           tickLine={{ stroke: 'hsl(var(--border))' }}
                         />

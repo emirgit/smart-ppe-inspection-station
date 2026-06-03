@@ -33,6 +33,7 @@ export const api: {
   listPpeItems(): ApiResponse<unknown[]>
   listEntryLogs(q?: Query): ApiResponse<unknown[]>
   getEntryLogStats(q?: Query): ApiResponse<unknown>
+  getWorkerDigitalTwin(id: number): ApiResponse<unknown>
 }
 
 export const authApi: {

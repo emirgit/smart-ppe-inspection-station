@@ -144,6 +144,65 @@ describe('GET /api/workers/:id', () => {
   });
 });
 
+// ─── GET /api/workers/digital-twin/:id ──────────────────
+describe('GET /api/workers/digital-twin/:id', () => {
+  it('should return worker digital twin data', async () => {
+    const mockEntryLogRaw = {
+      id: 10,
+      workerId: 1,
+      rfidUidScanned: 'ABC123',
+      result: 'PASS',
+      inspectionTimeMs: 320,
+      cameraSnapshotUrl: null,
+      scannedAt: new Date('2026-04-10T10:00:00Z'),
+      detectionDetails: [
+        {
+          wasRequired: true,
+          wasDetected: false,
+          ppeItem: {
+            itemKey: 'hard_hat',
+            displayName: 'Hard Hat',
+          },
+        },
+      ],
+    };
+
+    prisma.worker.findUnique.mockResolvedValue(mockWorkerRaw);
+    prisma.entryLog.count
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(6);
+    prisma.entryLog.findMany.mockResolvedValue([mockEntryLogRaw]);
+
+    const res = await request(app).get('/api/workers/digital-twin/1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.worker.full_name).toBe('John Doe');
+    expect(res.body.data.stats).toMatchObject({
+      total_scans: 6,
+      passed: 3,
+      failed: 2,
+      compliance_rate: 60,
+    });
+    expect(res.body.data.last_10_entry_logs).toHaveLength(1);
+    expect(res.body.data.last_10_entry_logs[0]).toMatchObject({
+      id: 10,
+      result: 'PASS',
+      missing_ppe: [{ item_key: 'hard_hat', display_name: 'Hard Hat' }],
+    });
+  });
+
+  it('should return 404 when worker not found', async () => {
+    prisma.worker.findUnique.mockResolvedValue(null);
+
+    const res = await request(app).get('/api/workers/digital-twin/999');
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.message).toMatch(/Worker not found/i);
+  });
+});
+
 // ─── PUT /api/workers/:id ────────────────────────────────
 describe('PUT /api/workers/:id', () => {
   it('should update a worker', async () => {

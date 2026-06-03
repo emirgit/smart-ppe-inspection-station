@@ -35,7 +35,7 @@ model Role {
 model Worker {
   id          Int      @id @default(autoincrement())
   fullName    String   @db.VarChar(100) @map("full_name")
-  rfidCardUid String   @unique @db.VarChar(20) @map("rfid_card_uid")
+  rfidCardUid String?  @unique @db.VarChar(20) @map("rfid_card_uid")
   roleId      Int      @map("role_id")
   isActive    Boolean  @default(true) @map("is_active")
   photoUrl    String?  @db.VarChar(255) @map("photo_url")
@@ -86,6 +86,17 @@ model EntryLog {
   @@map("entry_logs")
 }
 
+model RfidScan {
+  id        Int      @id @default(autoincrement())
+  slot      Int      @unique @default(1)
+  rfid      String   @db.VarChar(50)
+  scannedAt DateTime @map("scanned_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("rfid_scans")
+}
+
 model DetectionDetail {
   id          Int     @id @default(autoincrement())
   entryLogId  Int     @map("entry_log_id")
@@ -98,4 +109,15 @@ model DetectionDetail {
   ppeItem  PpeItem  @relation(fields: [ppeItemId], references: [id])
 
   @@map("detection_details")
+}
+
+model Admin {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique @db.VarChar(255)
+  password  String   @db.VarChar(255)
+  name      String   @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("admins")
 }

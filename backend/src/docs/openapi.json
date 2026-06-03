@@ -3,7 +3,7 @@
   "info": {
     "title": "PPE Inspection Station API",
     "description": "REST API contract for Admin Panel and Raspberry Pi integration in the PPE inspection turnstile system.",
-    "version": "1.2.0"
+    "version": "1.4.0"
   },
   "servers": [
     {
@@ -12,13 +12,120 @@
     }
   ],
   "tags": [
+    { "name": "Auth", "description": "Admin authentication (signup, login, me)" },
     { "name": "Health", "description": "Service health checks" },
     { "name": "Workers", "description": "Worker management endpoints" },
     { "name": "Roles", "description": "Role and role-PPE requirements" },
     { "name": "PPE Items", "description": "Master PPE item catalog" },
-    { "name": "Entry Logs", "description": "Inspection log ingestion and querying" }
+    { "name": "Entry Logs", "description": "Inspection log ingestion and querying" },
+    { "name": "RFID", "description": "Public RFID scan endpoints" }
   ],
   "paths": {
+    "/api/auth/signup": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Register a new admin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SignUpRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Admin created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthResponse" }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already registered",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Login and get JWT",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get current admin profile",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Current admin profile",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AdminProfileResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": ["Health"],
@@ -45,6 +152,7 @@
       "get": {
         "tags": ["Workers"],
         "summary": "List workers",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "in": "query",
@@ -75,6 +183,7 @@
       "post": {
         "tags": ["Workers"],
         "summary": "Create worker",
+        "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -119,10 +228,53 @@
         }
       }
     },
+    "/api/workers/digital-twin/{id}": {
+      "get": {
+        "tags": ["Workers"],
+        "summary": "Get worker digital twin",
+        "description": "Returns aggregated compliance stats and the latest 10 entry logs for the worker.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Digital twin data",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WorkerDigitalTwinResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "404": {
+            "description": "Worker not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workers/{id}": {
       "get": {
         "tags": ["Workers"],
         "summary": "Get worker by ID",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -153,6 +305,8 @@
       "put": {
         "tags": ["Workers"],
         "summary": "Partially update worker",
+        "description": "Updates worker details. If an inactive worker is assigned a new `rfid_card_uid`, they will be automatically reactivated (`is_active` set to `true`).",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -198,7 +352,9 @@
       },
       "delete": {
         "tags": ["Workers"],
-        "summary": "Soft-delete worker",
+        "summary": "Soft-delete worker (deactivate)",
+        "description": "Sets `is_active` to `false` and clears `rfid_card_uid` to `null` so the RFID card can be re-assigned. The worker record is **not** removed from the database.",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -209,7 +365,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Worker deactivated",
+            "description": "Worker deactivated and RFID card released",
             "content": {
               "application/json": {
                 "schema": {
@@ -229,8 +385,189 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
           "404": {
             "description": "Worker not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workers/{id}/permanent": {
+      "delete": {
+        "tags": ["Workers"],
+        "summary": "Hard-delete worker (permanent)",
+        "description": "Permanently removes the worker record from the database. If the worker has a profile photo stored in Cloudflare R2, the object is deleted first. **This action is irreversible.**",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" },
+            "description": "Worker ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Worker permanently deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "message": { "type": "string", "example": "Worker permanently deleted" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "integer", "example": 1 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "404": {
+            "description": "Worker not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workers/{id}/photo": {
+      "post": {
+        "tags": ["Workers"],
+        "summary": "Upload or replace worker profile photo",
+        "description": "Uploads a profile photo to Cloudflare R2 and saves the public URL in `photo_url`. If the worker already has a photo, the old object is deleted from R2 first. Accepts `multipart/form-data` with a single field named `photo`.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" },
+            "description": "Worker ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["photo"],
+                "properties": {
+                  "photo": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Image file (JPEG, PNG, or WebP — max 5 MB)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Photo uploaded; returns updated worker object with new `photo_url`",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WorkerSingleResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "No file provided",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "404": {
+            "description": "Worker not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported media type (only JPEG, PNG, WebP allowed)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Workers"],
+        "summary": "Delete worker profile photo",
+        "description": "Removes the photo object from Cloudflare R2 and sets `photo_url` to null in the database.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" },
+            "description": "Worker ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Photo deleted; returns updated worker object with `photo_url: null`",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WorkerSingleResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "404": {
+            "description": "Worker not found, or worker has no profile photo",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
@@ -274,10 +611,65 @@
         }
       }
     },
+    "/api/rfid/scan": {
+      "post": {
+        "tags": ["RFID"],
+        "summary": "Store latest RFID scan",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RfidScanRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "RFID scan stored",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RfidScanResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["RFID"],
+        "summary": "Get latest RFID scan",
+        "responses": {
+          "200": {
+            "description": "Latest RFID scan",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RfidScanResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "No RFID scan found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/roles": {
       "get": {
         "tags": ["Roles"],
         "summary": "List roles",
+        "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": {
             "description": "Roles list",
@@ -292,6 +684,7 @@
       "post": {
         "tags": ["Roles"],
         "summary": "Create role",
+        "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -332,6 +725,7 @@
       "get": {
         "tags": ["Roles"],
         "summary": "Get required PPE for role",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -363,6 +757,7 @@
         "tags": ["Roles"],
         "summary": "Replace PPE requirements for role",
         "description": "Replace operation: submitted list fully replaces existing role PPE requirements.",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -422,6 +817,7 @@
         "tags": ["PPE Items"],
         "summary": "List all PPE items",
         "description": "item_key values should match AI model class labels exactly.",
+        "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": {
             "description": "PPE item list",
@@ -432,51 +828,13 @@
             }
           }
         }
-      },
-      "post": {
-        "tags": ["PPE Items"],
-        "summary": "Create PPE item",
-        "description": "item_key must match AI model class label.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/CreatePpeItemRequest" }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "PPE item created",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/PpeItemSingleResponse" }
-              }
-            }
-          },
-          "409": {
-            "description": "item_key already exists",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
-              }
-            }
-          }
-        }
       }
     },
     "/api/ppe-items/{id}": {
       "get": {
         "tags": ["PPE Items"],
         "summary": "Get PPE item by ID",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "name": "id",
@@ -496,102 +854,6 @@
           },
           "404": {
             "description": "PPE item not found",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": ["PPE Items"],
-        "summary": "Update PPE item",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/UpdatePpeItemRequest" }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "PPE item updated",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/PpeItemSingleResponse" }
-              }
-            }
-          },
-          "404": {
-            "description": "PPE item not found",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
-              }
-            }
-          },
-          "409": {
-            "description": "item_key already exists",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": ["PPE Items"],
-        "summary": "Delete PPE item",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "PPE item deleted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean", "example": true },
-                    "message": { "type": "string", "example": "PPE item deleted" },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "id": { "type": "integer", "example": 1 }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "PPE item not found",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
-              }
-            }
-          },
-          "409": {
-            "description": "PPE item is assigned to roles",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
@@ -636,6 +898,7 @@
       "get": {
         "tags": ["Entry Logs"],
         "summary": "List entry logs",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           { "in": "query", "name": "worker_id", "schema": { "type": "integer" }, "required": false },
           {
@@ -675,6 +938,7 @@
       "get": {
         "tags": ["Entry Logs"],
         "summary": "Get compliance dashboard stats",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [
           {
             "in": "query",
@@ -703,7 +967,62 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Enter your JWT token obtained from /api/auth/login or /api/auth/signup"
+      }
+    },
     "schemas": {
+      "SignUpRequest": {
+        "type": "object",
+        "required": ["email", "password", "name"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "example": "admin@example.com" },
+          "password": { "type": "string", "minLength": 6, "example": "securePassword123" },
+          "name": { "type": "string", "example": "John Doe" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "example": "admin@example.com" },
+          "password": { "type": "string", "example": "securePassword123" }
+        }
+      },
+      "Admin": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "email": { "type": "string", "example": "admin@example.com" },
+          "name": { "type": "string", "example": "John Doe" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": {
+            "type": "object",
+            "properties": {
+              "admin": { "$ref": "#/components/schemas/Admin" },
+              "token": { "type": "string", "example": "eyJhbGciOiJIUzI1NiIs..." }
+            }
+          }
+        }
+      },
+      "AdminProfileResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": { "$ref": "#/components/schemas/Admin" }
+        }
+      },
       "ErrorEnvelope": {
         "type": "object",
         "required": ["success", "error"],
@@ -728,7 +1047,7 @@
           "role_id": { "type": "integer", "example": 2 },
           "role_name": { "type": "string", "example": "Technician" },
           "is_active": { "type": "boolean", "example": true },
-          "photo_url": { "type": "string", "nullable": true, "example": "/uploads/workers/1.jpg" },
+          "photo_url": { "type": "string", "nullable": true, "example": "https://pub-xxxx.r2.dev/photos/worker-1-1715900000000.jpg" },
           "created_at": { "type": "string", "format": "date-time" },
           "updated_at": { "type": "string", "format": "date-time", "nullable": true }
         }
@@ -751,6 +1070,53 @@
           "data": { "$ref": "#/components/schemas/Worker" }
         }
       },
+      "WorkerDigitalTwinEntryLog": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 115 },
+          "rfid_uid_scanned": { "type": "string", "example": "A3F2C1D4" },
+          "result": { "$ref": "#/components/schemas/EntryResult" },
+          "scanned_at": { "type": "string", "format": "date-time" },
+          "inspection_time_ms": { "type": "integer", "nullable": true, "example": 410 },
+          "camera_snapshot_url": { "type": "string", "nullable": true, "example": null },
+          "missing_ppe": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item_key": { "type": "string", "example": "hard_hat" },
+                "display_name": { "type": "string", "example": "Hard Hat" }
+              }
+            }
+          }
+        }
+      },
+      "WorkerDigitalTwinStats": {
+        "type": "object",
+        "properties": {
+          "total_scans": { "type": "integer", "example": 12 },
+          "passed": { "type": "integer", "example": 8 },
+          "failed": { "type": "integer", "example": 4 },
+          "compliance_rate": { "type": "number", "format": "float", "example": 66.7 }
+        }
+      },
+      "WorkerDigitalTwinResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": {
+            "type": "object",
+            "properties": {
+              "worker": { "$ref": "#/components/schemas/Worker" },
+              "stats": { "$ref": "#/components/schemas/WorkerDigitalTwinStats" },
+              "last_10_entry_logs": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/WorkerDigitalTwinEntryLog" }
+              }
+            }
+          }
+        }
+      },
       "CreateWorkerRequest": {
         "type": "object",
         "required": ["full_name", "rfid_card_uid", "role_id"],
@@ -758,7 +1124,7 @@
           "full_name": { "type": "string", "example": "Mehmet Kara" },
           "rfid_card_uid": { "type": "string", "example": "B4E1A2C3" },
           "role_id": { "type": "integer", "example": 2 },
-          "photo_url": { "type": "string", "nullable": true, "example": "/uploads/workers/2.jpg" }
+          "photo_url": { "type": "string", "nullable": true, "example": "https://pub-xxxx.r2.dev/photos/worker-2-1715900000000.jpg", "description": "Set automatically via POST /api/workers/{id}/photo. Pass null to clear." }
         }
       },
       "UpdateWorkerRequest": {
@@ -799,6 +1165,27 @@
                 "type": "array",
                 "items": { "$ref": "#/components/schemas/RequiredPpeItem" }
               }
+            }
+          }
+        }
+      },
+      "RfidScanRequest": {
+        "type": "object",
+        "required": ["rfid", "timestamp"],
+        "properties": {
+          "rfid": { "type": "string", "example": "A3F2C1D4" },
+          "timestamp": { "type": "string", "format": "date-time", "example": "2026-06-03T12:05:30.000Z" }
+        }
+      },
+      "RfidScanResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": {
+            "type": "object",
+            "properties": {
+              "rfid": { "type": "string", "example": "A3F2C1D4" },
+              "timestamp": { "type": "string", "format": "date-time" }
             }
           }
         }
@@ -887,23 +1274,7 @@
           "data": { "$ref": "#/components/schemas/PpeItem" }
         }
       },
-      "CreatePpeItemRequest": {
-        "type": "object",
-        "required": ["item_key", "display_name"],
-        "properties": {
-          "item_key": { "type": "string", "example": "safety_goggles" },
-          "display_name": { "type": "string", "example": "Safety Goggles" },
-          "icon_name": { "type": "string", "nullable": true, "example": "goggles" }
-        }
-      },
-      "UpdatePpeItemRequest": {
-        "type": "object",
-        "properties": {
-          "item_key": { "type": "string" },
-          "display_name": { "type": "string" },
-          "icon_name": { "type": "string", "nullable": true }
-        }
-      },
+
       "EntryResult": {
         "type": "string",
         "enum": ["PASS", "FAIL", "UNKNOWN_CARD"]

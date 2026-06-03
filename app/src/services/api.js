@@ -89,6 +89,30 @@ let nextRoleId    = mockRoles.length + 1
 let nextPpeId     = mockPpeItems.length + 1
 
 const mockApi = {
+  async scanRfid() {
+    await delay(300)
+    const rfid = Math.random().toString(16).slice(2, 10).toUpperCase()
+    return { success: true, data: { rfid, timestamp: new Date().toISOString() } }
+  },
+  async getWorkerDigitalTwin(id) {
+    await delay(400)
+    const worker = mockWorkers.find(w => w.id === id)
+    if (!worker) throw new ApiError(404, 'Çalışan bulunamadı')
+    const logs = mockEntryLogs.filter(l => l.worker_id === id)
+    const passed = logs.filter(l => l.result === 'PASS').length
+    const failed = logs.filter(l => l.result === 'FAIL').length
+    const total_scans = logs.length
+    const compliance_rate = passed + failed > 0 ? Math.round((passed / (passed + failed)) * 1000) / 10 : 0
+    const last10 = [...logs].sort((a, b) => new Date(b.scanned_at) - new Date(a.scanned_at)).slice(0, 10)
+    return {
+      success: true,
+      data: {
+        worker,
+        stats: { total_scans, passed, failed, compliance_rate },
+        last_10_entry_logs: last10,
+      },
+    }
+  },
   async listWorkers(q = {}) {
     await delay(); let data = [...mockWorkers]
     if (q.is_active !== undefined) data = data.filter(w => w.is_active === q.is_active)
@@ -217,6 +241,8 @@ const mockApi = {
 }
 
 const realApi = {
+  scanRfid() { return apiFetch('/api/rfid/scan') },
+  getWorkerDigitalTwin(id) { return apiFetch(`/api/workers/digital-twin/${id}`) },
   listWorkers(q = {}) {
     const p = new URLSearchParams()
     if (q.is_active !== undefined) p.set('is_active', q.is_active)

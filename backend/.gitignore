@@ -5,8 +5,6 @@ node_modules/
 
 # Prisma generated client
 src/generated/
-generated/
-**/*.dylib.node
 
 # OS
 .DS_Store
