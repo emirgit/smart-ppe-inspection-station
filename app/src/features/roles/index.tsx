@@ -122,7 +122,7 @@ export function Roles() {
     setLoading(true); setError(null)
     try {
       const [rr, pr] = await Promise.all([api.listRoles(), api.listPpeItems()])
-      setRoles(rr.data); setPpeItems(pr.data)
+      setRoles(rr.data); setPpeItems(pr.data.filter((p: any) => p.item_key !== 'gloves'))
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }
