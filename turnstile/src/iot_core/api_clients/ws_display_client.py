@@ -157,7 +157,7 @@ class WebSocketDisplayNotifier(DisplayClient):
             return
 
         self._clients.add(ws)
-        logger.debug("Display client connected (%d total)", len(self._clients))
+        logger.info("Display client connected (%d total)", len(self._clients))
 
         # Replay the most recent state so a late-connecting display is not stale.
         with self._payload_lock:
@@ -183,7 +183,7 @@ class WebSocketDisplayNotifier(DisplayClient):
             pass
         finally:
             self._clients.discard(ws)
-            logger.debug("Display client disconnected (%d remaining)", len(self._clients))
+            logger.info("Display client disconnected (%d remaining)", len(self._clients))
 
     async def _broadcast(self, message: str) -> None:
         for ws in list(self._clients):
