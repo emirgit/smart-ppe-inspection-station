@@ -1,366 +1,282 @@
-/**
- * @file    api.js
- * @brief   Admin Panel API service — real HTTP client with mock fallback
- * @author  Tarık Saeede (200104004804)
- *
- * Connects to MOD-04 (Express.js + PostgreSQL) backend.
- * If VITE_USE_MOCK is true OR the backend is unreachable, falls back to mock data.
- *
- * All method names match BackendApiContract from admin_side_interface.d.ts.
- * Standard response: { success: true, data: ... } or { success: false, error: { code, message } }
- */
+import * as mock from './mock-data'
 
-import * as mock from './mock-data';
-import { getSettings } from '@/lib/settings';
-
-// ── Fetch wrapper ──────────────────────────────────────────────
-
-async function apiFetch(path, options = {}) {
-  const { apiBaseUrl } = getSettings();
-  const url = `${apiBaseUrl}${path}`;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-  try {
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    const json = await res.json();
-    if (!res.ok || !json.success) {
-      throw new ApiError(
-        json.error?.code || res.status,
-        json.error?.message || `HTTP ${res.status}`
-      );
-    }
-    return json;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      throw new ApiError(0, 'Request timeout — backend unreachable');
-    }
-    if (err instanceof ApiError) throw err;
-    throw new ApiError(0, err.message || 'Network error');
-  }
-}
+const delay = (ms = 250) => new Promise(r => setTimeout(r, ms))
 
 export class ApiError extends Error {
   constructor(code, message) {
-    super(message);
-    this.code = code;
-    this.name = 'ApiError';
+    super(message); this.code = code; this.name = 'ApiError'
   }
 }
 
-// ── Mock implementations (used when VITE_USE_MOCK=true) ────────
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001'
+const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
+const TOKEN_KEY = 'ppe_admin_token'
 
-const delay = (ms = 200) => new Promise(r => setTimeout(r, ms));
+function getToken() {
+  return localStorage.getItem(TOKEN_KEY)
+}
 
-let mockWorkers = [...mock.workers];
-let mockRoles = [...mock.roles];
-let mockPpeItems = [...mock.ppeItems];
-let mockEntryLogs = [...mock.entryLogs];
-let nextWorkerId = mockWorkers.length + 1;
-let nextRoleId = mockRoles.length + 1;
-let nextPpeId = mockPpeItems.length + 1;
+export function resolveAssetUrl(value) {
+  if (!value) return ''
+  if (/^(https?:|blob:|data:)/i.test(value)) return value
+  return `${BASE_URL}${value.startsWith('/') ? value : `/${value}`}`
+}
+
+async function apiFetch(path, options = {}) {
+  const token = getToken()
+  const headers = { 'Content-Type': 'application/json', ...options.headers }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const controller = new AbortController()
+  const tid = setTimeout(() => controller.abort(), 8000)
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      ...options, headers, signal: controller.signal,
+    })
+    clearTimeout(tid)
+
+    if (res.status === 401) {
+      localStorage.removeItem(TOKEN_KEY)
+      window.location.href = '/sign-in'
+      throw new ApiError(401, 'Oturum süresi doldu')
+    }
+
+    const json = await res.json()
+    if (!res.ok || !json.success) throw new ApiError(json.error?.code || res.status, json.error?.message || `HTTP ${res.status}`)
+    return json
+  } catch (err) {
+    clearTimeout(tid)
+    if (err.name === 'AbortError') throw new ApiError(0, 'İstek zaman aşımına uğradı')
+    if (err instanceof ApiError) throw err
+    throw new ApiError(0, err.message || 'Ağ hatası')
+  }
+}
+
+// ── Auth ─────────────────────────────────────────────────
+export const authApi = {
+  async login(email, password) {
+    const res = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    })
+    const json = await res.json()
+    if (!res.ok || !json.success) throw new ApiError(res.status, json.error?.message || 'Giriş başarısız')
+    return json
+  },
+  async signup(name, email, password) {
+    const res = await fetch(`${BASE_URL}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password }),
+    })
+    const json = await res.json()
+    if (!res.ok || !json.success) throw new ApiError(res.status, json.error?.message || 'Kayıt başarısız')
+    return json
+  },
+  async me() {
+    return apiFetch('/api/auth/me')
+  },
+}
+
+// ── Mock state ────────────────────────────────────────────
+let mockWorkers   = [...mock.workers]
+let mockRoles     = [...mock.roles]
+let mockPpeItems  = [...mock.ppeItems]
+let mockEntryLogs = [...mock.entryLogs]
+let nextWorkerId  = mockWorkers.length + 1
+let nextRoleId    = mockRoles.length + 1
+let nextPpeId     = mockPpeItems.length + 1
 
 const mockApi = {
-  async listWorkers(query = {}) {
-    await delay();
-    let data = [...mockWorkers];
-    if (query.is_active !== undefined) {
-      data = data.filter(w => w.is_active === query.is_active);
-    }
-    if (query.role_id !== undefined) {
-      data = data.filter(w => w.role_id === query.role_id);
-    }
-    return { success: true, data, total: data.length };
+  async listWorkers(q = {}) {
+    await delay(); let data = [...mockWorkers]
+    if (q.is_active !== undefined) data = data.filter(w => w.is_active === q.is_active)
+    if (q.role_id !== undefined) data = data.filter(w => w.role_id === q.role_id)
+    return { success: true, data, total: data.length }
   },
-
   async createWorker(body) {
-    await delay(400);
-    if (mockWorkers.some(w => w.rfid_card_uid === body.rfid_card_uid)) {
-      throw new ApiError(409, 'RFID card UID already registered');
-    }
-    const role = mockRoles.find(r => r.id === body.role_id);
-    if (!role) throw new ApiError(404, 'Role not found');
-    const newWorker = {
-      id: nextWorkerId++,
-      full_name: body.full_name,
-      rfid_card_uid: body.rfid_card_uid,
-      role_id: body.role_id,
-      role_name: role.role_name,
-      is_active: true,
-      photo_url: body.photo_url || null,
-      created_at: new Date().toISOString(),
-      updated_at: null,
-    };
-    mockWorkers.push(newWorker);
-    return { success: true, data: newWorker };
+    await delay(400)
+    if (mockWorkers.some(w => w.rfid_card_uid === body.rfid_card_uid)) throw new ApiError(409, 'Bu RFID kart zaten kayıtlı')
+    const role = mockRoles.find(r => r.id === body.role_id)
+    if (!role) throw new ApiError(404, 'Rol bulunamadı')
+    const w = { id: nextWorkerId++, ...body, role_name: role.role_name, is_active: true, photo_url: null, created_at: new Date().toISOString() }
+    mockWorkers.push(w); return { success: true, data: w }
   },
-
   async getWorkerById(id) {
-    await delay();
-    const w = mockWorkers.find(w => w.id === id);
-    if (!w) throw new ApiError(404, 'Worker not found');
-    return { success: true, data: w };
+    await delay(); const w = mockWorkers.find(w => w.id === id)
+    if (!w) throw new ApiError(404, 'Çalışan bulunamadı')
+    return { success: true, data: w }
   },
-
   async updateWorker(id, body) {
-    await delay(400);
-    const idx = mockWorkers.findIndex(w => w.id === id);
-    if (idx === -1) throw new ApiError(404, 'Worker not found');
-    if (body.rfid_card_uid && mockWorkers.some(w => w.id !== id && w.rfid_card_uid === body.rfid_card_uid)) {
-      throw new ApiError(409, 'RFID card UID conflict');
-    }
-    const updated = { ...mockWorkers[idx], ...body, updated_at: new Date().toISOString() };
-    if (body.role_id) {
-      const role = mockRoles.find(r => r.id === body.role_id);
-      if (role) updated.role_name = role.role_name;
-    }
-    mockWorkers[idx] = updated;
-    return { success: true, data: updated };
+    await delay(400); const idx = mockWorkers.findIndex(w => w.id === id)
+    if (idx === -1) throw new ApiError(404, 'Çalışan bulunamadı')
+    if (body.rfid_card_uid && mockWorkers.some(w => w.id !== id && w.rfid_card_uid === body.rfid_card_uid)) throw new ApiError(409, 'Bu RFID kart zaten kayıtlı')
+    const updated = { ...mockWorkers[idx], ...body, updated_at: new Date().toISOString() }
+    if (body.role_id) { const role = mockRoles.find(r => r.id === body.role_id); if (role) updated.role_name = role.role_name }
+    mockWorkers[idx] = updated; return { success: true, data: updated }
   },
-
   async softDeleteWorker(id) {
-    await delay(400);
-    const idx = mockWorkers.findIndex(w => w.id === id);
-    if (idx === -1) throw new ApiError(404, 'Worker not found');
-    mockWorkers[idx].is_active = false;
-    return { success: true, message: 'Worker deactivated', data: { id, is_active: false } };
+    await delay(400); const idx = mockWorkers.findIndex(w => w.id === id)
+    if (idx === -1) throw new ApiError(404, 'Çalışan bulunamadı')
+    mockWorkers[idx].is_active = false; return { success: true, data: { id, is_active: false } }
   },
-
-  async lookupWorkerByCard(uid) {
-    await delay();
-    const worker = mockWorkers.find(w => w.rfid_card_uid === uid && w.is_active);
-    if (!worker) throw new ApiError(404, 'Card not registered');
-    const role = mockRoles.find(r => r.id === worker.role_id);
-    const required_ppe = role ? mockPpeItems.filter(p => role.required_ppe.includes(p.id)) : [];
-    return { success: true, data: { worker, required_ppe } };
+  async hardDeleteWorker(id) {
+    await delay(400); const idx = mockWorkers.findIndex(w => w.id === id)
+    if (idx === -1) throw new ApiError(404, 'Çalışan bulunamadı')
+    mockWorkers.splice(idx, 1); return { success: true, message: 'Çalışan kalıcı olarak silindi' }
   },
-
+  async reactivateWorker(id) {
+    await delay(400); const idx = mockWorkers.findIndex(w => w.id === id)
+    if (idx === -1) throw new ApiError(404, 'Çalışan bulunamadı')
+    mockWorkers[idx].is_active = true; return { success: true, data: { id, is_active: true } }
+  },
+  async uploadWorkerPhoto(id, _file) {
+    await delay(600)
+    const url = `https://picsum.photos/seed/${id}/200/200`
+    const idx = mockWorkers.findIndex(w => w.id === id)
+    if (idx > -1) mockWorkers[idx].photo_url = url
+    return { success: true, data: { photo_url: url } }
+  },
+  async deleteWorkerPhoto(id) {
+    await delay(400); const idx = mockWorkers.findIndex(w => w.id === id)
+    if (idx > -1) mockWorkers[idx].photo_url = null
+    return { success: true }
+  },
   async listRoles() {
-    await delay();
-    const data = mockRoles.map(r => ({
-      ...r,
-      ppe_items: mockPpeItems.filter(p => r.required_ppe.includes(p.id)),
-      worker_count: mockWorkers.filter(w => w.role_id === r.id && w.is_active).length,
-    }));
-    return { success: true, data };
+    await delay()
+    return { success: true, data: mockRoles.map(r => ({ ...r, ppe_items: mockPpeItems.filter(p => r.required_ppe.includes(p.id)), worker_count: mockWorkers.filter(w => w.role_id === r.id && w.is_active).length })) }
   },
-
   async createRole(body) {
-    await delay(400);
-    if (mockRoles.some(r => r.role_name.toLowerCase() === body.role_name.toLowerCase())) {
-      throw new ApiError(409, 'Role name already exists');
-    }
-    const newRole = {
-      id: nextRoleId++,
-      role_name: body.role_name,
-      description: body.description || null,
-      required_ppe: [],
-      created_at: new Date().toISOString(),
-    };
-    mockRoles.push(newRole);
-    return { success: true, data: newRole };
+    await delay(400)
+    if (mockRoles.some(r => r.role_name.toLowerCase() === body.role_name.toLowerCase())) throw new ApiError(409, 'Bu rol adı zaten mevcut')
+    const r = { id: nextRoleId++, role_name: body.role_name, description: body.description || null, required_ppe: [], created_at: new Date().toISOString() }
+    mockRoles.push(r); return { success: true, data: r }
   },
-
   async updateRole(id, body) {
-    await delay(400);
-    const idx = mockRoles.findIndex(r => r.id === id);
-    if (idx === -1) throw new ApiError(404, 'Role not found');
-    mockRoles[idx] = { ...mockRoles[idx], ...body };
-    return { success: true, data: mockRoles[idx] };
+    await delay(400); const idx = mockRoles.findIndex(r => r.id === id)
+    if (idx === -1) throw new ApiError(404, 'Rol bulunamadı')
+    mockRoles[idx] = { ...mockRoles[idx], ...body }; return { success: true, data: mockRoles[idx] }
   },
-
   async deleteRole(id) {
-    await delay(400);
-    const idx = mockRoles.findIndex(r => r.id === id);
-    if (idx === -1) throw new ApiError(404, 'Role not found');
-    const activeCount = mockWorkers.filter(w => w.role_id === id && w.is_active).length;
-    if (activeCount > 0) {
-      throw new ApiError(409, `Cannot delete role: ${activeCount} active worker(s) assigned`);
-    }
-    mockRoles.splice(idx, 1);
-    return { success: true, message: 'Role deleted' };
+    await delay(400); const idx = mockRoles.findIndex(r => r.id === id)
+    if (idx === -1) throw new ApiError(404, 'Rol bulunamadı')
+    const active = mockWorkers.filter(w => w.role_id === id && w.is_active).length
+    if (active > 0) throw new ApiError(409, `Bu role atanmış ${active} aktif çalışan var`)
+    mockRoles.splice(idx, 1); return { success: true }
   },
-
   async getRolePpe(id) {
-    await delay();
-    const role = mockRoles.find(r => r.id === id);
-    if (!role) throw new ApiError(404, 'Role not found');
-    const ppe_items = mockPpeItems.filter(p => role.required_ppe.includes(p.id));
-    return { success: true, data: { role_id: role.id, role_name: role.role_name, ppe_items } };
+    await delay(); const role = mockRoles.find(r => r.id === id)
+    if (!role) throw new ApiError(404, 'Rol bulunamadı')
+    return { success: true, data: { role_id: role.id, role_name: role.role_name, ppe_items: mockPpeItems.filter(p => role.required_ppe.includes(p.id)) } }
   },
-
   async replaceRolePpe(id, body) {
-    await delay(400);
-    const idx = mockRoles.findIndex(r => r.id === id);
-    if (idx === -1) throw new ApiError(404, 'Role not found');
-    mockRoles[idx].required_ppe = body.ppe_item_ids;
-    const ppe_items = mockPpeItems.filter(p => body.ppe_item_ids.includes(p.id));
-    return { success: true, data: { role_id: id, role_name: mockRoles[idx].role_name, ppe_items } };
+    await delay(400); const idx = mockRoles.findIndex(r => r.id === id)
+    if (idx === -1) throw new ApiError(404, 'Rol bulunamadı')
+    mockRoles[idx].required_ppe = body.ppe_item_ids
+    return { success: true, data: { role_id: id, role_name: mockRoles[idx].role_name, ppe_items: mockPpeItems.filter(p => body.ppe_item_ids.includes(p.id)) } }
   },
-
-  async listPpeItems() {
-    await delay();
-    return { success: true, data: [...mockPpeItems] };
+  async listPpeItems() { await delay(); return { success: true, data: [...mockPpeItems] } },
+  async listEntryLogs(q = {}) {
+    await delay(); let data = [...mockEntryLogs]
+    if (q.result) data = data.filter(l => l.result === q.result)
+    if (q.worker_id) data = data.filter(l => l.worker_id === q.worker_id)
+    if (q.start_date) data = data.filter(l => l.scanned_at >= q.start_date)
+    if (q.end_date) data = data.filter(l => l.scanned_at <= `${q.end_date}T23:59:59Z`)
+    data.sort((a, b) => new Date(b.scanned_at) - new Date(a.scanned_at))
+    const limit = q.limit || 50, offset = q.offset || 0
+    return { success: true, data: data.slice(offset, offset + limit), total: data.length, limit, offset }
   },
-
-  async createPpeItem(body) {
-    await delay(400);
-    if (mockPpeItems.some(p => p.item_key === body.item_key)) {
-      throw new ApiError(409, 'PPE item key already exists');
-    }
-    const newItem = {
-      id: nextPpeId++,
-      item_key: body.item_key,
-      display_name: body.display_name,
-      icon_name: body.icon_name || null,
-    };
-    mockPpeItems.push(newItem);
-    return { success: true, data: newItem };
-  },
-
-  async deletePpeItem(id) {
-    await delay(400);
-    const idx = mockPpeItems.findIndex(p => p.id === id);
-    if (idx === -1) throw new ApiError(404, 'PPE item not found');
-    const usingRoles = mockRoles.filter(r => r.required_ppe.includes(id));
-    if (usingRoles.length > 0) {
-      throw new ApiError(409, `Cannot delete: used by ${usingRoles.length} role(s)`);
-    }
-    mockPpeItems.splice(idx, 1);
-    return { success: true, message: 'PPE item deleted' };
-  },
-
-  async listEntryLogs(query = {}) {
-    await delay();
-    let data = [...mockEntryLogs];
-    if (query.result) data = data.filter(l => l.result === query.result);
-    if (query.worker_id) data = data.filter(l => l.worker_id === query.worker_id);
-    if (query.start_date) data = data.filter(l => l.scanned_at >= query.start_date);
-    if (query.end_date) data = data.filter(l => l.scanned_at <= `${query.end_date}T23:59:59Z`);
-    data.sort((a, b) => new Date(b.scanned_at) - new Date(a.scanned_at));
-    const limit = query.limit || 50;
-    const offset = query.offset || 0;
-    return { success: true, data: data.slice(offset, offset + limit), total: data.length, limit, offset };
-  },
-
-  async getEntryLogStats(query = {}) {
-    await delay();
-    let logs = [...mockEntryLogs];
-    if (query.start_date) logs = logs.filter(l => l.scanned_at >= query.start_date);
-    if (query.end_date) logs = logs.filter(l => l.scanned_at <= `${query.end_date}T23:59:59Z`);
-
-    const total_scans = logs.length;
-    const passed = logs.filter(l => l.result === 'PASS').length;
-    const failed = logs.filter(l => l.result === 'FAIL').length;
-    const unknown_cards = logs.filter(l => l.result === 'UNKNOWN_CARD').length;
-    const compliance_rate = passed + failed > 0 ? Math.round((passed / (passed + failed)) * 1000) / 10 : 0;
-
-    const missMap = {};
+  async getEntryLogStats(q = {}) {
+    await delay(); let logs = [...mockEntryLogs]
+    if (q.start_date) logs = logs.filter(l => l.scanned_at >= q.start_date)
+    if (q.end_date) logs = logs.filter(l => l.scanned_at <= `${q.end_date}T23:59:59Z`)
+    const passed = logs.filter(l => l.result === 'PASS').length
+    const failed = logs.filter(l => l.result === 'FAIL').length
+    const unknown = logs.filter(l => l.result === 'UNKNOWN_CARD').length
+    const compliance_rate = passed + failed > 0 ? Math.round((passed / (passed + failed)) * 1000) / 10 : 0
+    const missMap = {}
     logs.forEach(l => l.missing_ppe.forEach(item => {
-      const k = item.item_key;
-      if (!missMap[k]) missMap[k] = { item_key: k, display_name: item.display_name, miss_count: 0 };
-      missMap[k].miss_count++;
-    }));
-    const most_missed_ppe = Object.values(missMap).sort((a, b) => b.miss_count - a.miss_count);
-
-    const dailyMap = {};
+      if (!missMap[item.item_key]) missMap[item.item_key] = { item_key: item.item_key, display_name: item.display_name, miss_count: 0 }
+      missMap[item.item_key].miss_count++
+    }))
+    const most_missed_ppe = Object.values(missMap).sort((a, b) => b.miss_count - a.miss_count)
+    const dailyMap = {}
     logs.forEach(l => {
-      const date = l.scanned_at.split('T')[0];
-      if (!dailyMap[date]) dailyMap[date] = { date, pass: 0, fail: 0, total: 0 };
-      if (l.result === 'PASS') dailyMap[date].pass++;
-      if (l.result === 'FAIL') dailyMap[date].fail++;
-      dailyMap[date].total++;
-    });
+      const date = l.scanned_at.split('T')[0]
+      if (!dailyMap[date]) dailyMap[date] = { date, pass: 0, fail: 0, total: 0 }
+      if (l.result === 'PASS') dailyMap[date].pass++
+      if (l.result === 'FAIL') dailyMap[date].fail++
+      dailyMap[date].total++
+    })
     const daily_data = Object.values(dailyMap)
       .map(d => ({ ...d, rate: d.pass + d.fail > 0 ? Math.round((d.pass / (d.pass + d.fail)) * 1000) / 10 : 0 }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    return {
-      success: true,
-      data: {
-        total_scans, passed, failed, unknown_cards, compliance_rate,
-        most_missed_ppe, daily_data,
-        period: { start_date: query.start_date || null, end_date: query.end_date || null },
-      },
-    };
+      .sort((a, b) => a.date.localeCompare(b.date))
+    return { success: true, data: { total_scans: logs.length, passed, failed, unknown_cards: unknown, compliance_rate, most_missed_ppe, daily_data } }
   },
-};
-
-// ── Real API implementations (used when VITE_USE_MOCK=false) ───
+}
 
 const realApi = {
-  listWorkers(query = {}) {
-    const params = new URLSearchParams();
-    if (query.is_active !== undefined) params.set('is_active', query.is_active);
-    if (query.role_id !== undefined) params.set('role_id', query.role_id);
-    return apiFetch(`/api/workers?${params}`);
+  listWorkers(q = {}) {
+    const p = new URLSearchParams()
+    if (q.is_active !== undefined) p.set('is_active', q.is_active)
+    if (q.role_id !== undefined) p.set('role_id', q.role_id)
+    return apiFetch(`/api/workers?${p}`)
   },
-  createWorker(body) { return apiFetch('/api/workers', { method: 'POST', body: JSON.stringify(body) }); },
-  getWorkerById(id) { return apiFetch(`/api/workers/${id}`); },
-  updateWorker(id, body) { return apiFetch(`/api/workers/${id}`, { method: 'PUT', body: JSON.stringify(body) }); },
-  softDeleteWorker(id) { return apiFetch(`/api/workers/${id}`, { method: 'DELETE' }); },
-  lookupWorkerByCard(uid) { return apiFetch(`/api/workers/card/${uid}`); },
+  createWorker(body)     { return apiFetch('/api/workers', { method: 'POST', body: JSON.stringify(body) }) },
+  getWorkerById(id)      { return apiFetch(`/api/workers/${id}`) },
+  updateWorker(id, body) { return apiFetch(`/api/workers/${id}`, { method: 'PUT', body: JSON.stringify(body) }) },
+  softDeleteWorker(id)   { return apiFetch(`/api/workers/${id}`, { method: 'DELETE' }) },
+  hardDeleteWorker(id)   { return apiFetch(`/api/workers/${id}/permanent`, { method: 'DELETE' }) },
+  reactivateWorker(id)   { return apiFetch(`/api/workers/${id}`, { method: 'PUT', body: JSON.stringify({ is_active: true }) }) },
+  async uploadWorkerPhoto(id, file) {
+    const token = getToken()
+    const formData = new FormData()
+    formData.append('photo', file)
+    const res = await fetch(`${BASE_URL}/api/workers/${id}/photo`, {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      body: formData,
+    })
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      throw new ApiError(res.status, json.error?.message || 'Fotoğraf yüklenemedi')
+    }
+    if (res.status === 204) return { success: true }
+    const json = await res.json().catch(() => ({ success: true }))
+    return json
+  },
+  deleteWorkerPhoto(id)  { return apiFetch(`/api/workers/${id}/photo`, { method: 'DELETE' }) },
   async listRoles() {
-    const [rolesRes, ppeRes, workersRes] = await Promise.all([
-      apiFetch('/api/roles'),
-      apiFetch('/api/ppe-items'),
-      apiFetch('/api/workers').catch(() => ({ success: true, data: [] })),
-    ]);
-    const allPpe = ppeRes.data || [];
-    const allWorkers = workersRes.data || [];
-    // Enrich each role with ppe_items and worker_count
-    const enriched = await Promise.all(
-      (rolesRes.data || []).map(async (role) => {
-        let ppe_items = [];
-        try {
-          const ppeRes2 = await apiFetch(`/api/roles/${role.id}/ppe`);
-          ppe_items = ppeRes2.data?.ppe_items || [];
-        } catch { ppe_items = []; }
-        const worker_count = allWorkers.filter(w => w.role_id === role.id && w.is_active).length;
-        return { ...role, ppe_items, worker_count, required_ppe: ppe_items.map(p => p.id) };
-      })
-    );
-    return { success: true, data: enriched };
+    const [rr, pr, wr] = await Promise.all([apiFetch('/api/roles'), apiFetch('/api/ppe-items'), apiFetch('/api/workers').catch(() => ({ data: [] }))])
+    const allWorkers = wr.data || []
+    const enriched = await Promise.all((rr.data || []).map(async role => {
+      let ppe_items = []
+      try { const r = await apiFetch(`/api/roles/${role.id}/ppe`); ppe_items = r.data?.ppe_items || [] } catch {}
+      return { ...role, ppe_items, worker_count: allWorkers.filter(w => w.role_id === role.id && w.is_active).length, required_ppe: ppe_items.map(p => p.id) }
+    }))
+    return { success: true, data: enriched }
   },
-  createRole(body) { return apiFetch('/api/roles', { method: 'POST', body: JSON.stringify(body) }); },
-  updateRole(id, body) { return apiFetch(`/api/roles/${id}`, { method: 'PUT', body: JSON.stringify(body) }); },
-  deleteRole(id) { return apiFetch(`/api/roles/${id}`, { method: 'DELETE' }); },
-  getRolePpe(id) { return apiFetch(`/api/roles/${id}/ppe`); },
-  replaceRolePpe(id, body) { return apiFetch(`/api/roles/${id}/ppe`, { method: 'PUT', body: JSON.stringify(body) }); },
-  listPpeItems() { return apiFetch('/api/ppe-items'); },
-  createPpeItem(body) { return apiFetch('/api/ppe-items', { method: 'POST', body: JSON.stringify(body) }); },
-  deletePpeItem(id) { return apiFetch(`/api/ppe-items/${id}`, { method: 'DELETE' }); },
-  listEntryLogs(query = {}) {
-    const params = new URLSearchParams();
-    Object.entries(query).forEach(([k, v]) => v !== undefined && params.set(k, v));
-    return apiFetch(`/api/entry-logs?${params}`);
+  createRole(body)         { return apiFetch('/api/roles', { method: 'POST', body: JSON.stringify(body) }) },
+  updateRole(id, body)     { return apiFetch(`/api/roles/${id}`, { method: 'PUT', body: JSON.stringify(body) }) },
+  deleteRole(id)           { return apiFetch(`/api/roles/${id}`, { method: 'DELETE' }) },
+  getRolePpe(id)           { return apiFetch(`/api/roles/${id}/ppe`) },
+  replaceRolePpe(id, body) { return apiFetch(`/api/roles/${id}/ppe`, { method: 'PUT', body: JSON.stringify(body) }) },
+  listPpeItems()           { return apiFetch('/api/ppe-items') },
+  listEntryLogs(q = {}) {
+    const p = new URLSearchParams()
+    Object.entries(q).forEach(([k, v]) => v !== undefined && p.set(k, v))
+    return apiFetch(`/api/entry-logs?${p}`)
   },
-  getEntryLogStats(query = {}) {
-    const params = new URLSearchParams();
-    Object.entries(query).forEach(([k, v]) => v !== undefined && params.set(k, v));
-    return apiFetch(`/api/entry-logs/stats?${params}`);
+  getEntryLogStats(q = {}) {
+    const p = new URLSearchParams()
+    Object.entries(q).forEach(([k, v]) => v !== undefined && p.set(k, v))
+    return apiFetch(`/api/entry-logs/stats?${p}`)
   },
-};
-
-// ── Proxy: dynamically pick mock or real based on settings ─────
+}
 
 export const api = new Proxy({}, {
   get(_, method) {
-    return (...args) => {
-      const { useMock } = getSettings();
-      const target = useMock ? mockApi : realApi;
-      return target[method](...args);
-    };
+    return (...args) => (USE_MOCK ? mockApi : realApi)[method](...args)
   },
-});
+})

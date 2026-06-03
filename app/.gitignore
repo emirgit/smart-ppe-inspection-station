@@ -1,17 +1,34 @@
-node_modules/
-dist/
-build/
-.vite/
-.env.local
-.env.*.local
+# Logs
+/logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.vscode/
-.idea/
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+.env
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
 .DS_Store
 *.suo
+*.ntvs*
+*.njsproj
+*.sln
 *.sw?
-coverage/
-.nyc_output/
-Thumbs.db
+
+# Test coverage
+/coverage
+
+# Vitest artifacts (browser screenshots/attachments)
+**/__screenshots__/
+.vitest-attachments/
