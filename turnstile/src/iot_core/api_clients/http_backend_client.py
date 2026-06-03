@@ -4,32 +4,29 @@ http_backend_client.py
 MOD-03 IoT Module — HTTP Backend Client Implementation
 
 Concrete implementation of BackendClient that communicates with the
-MOD-04 Express/PostgreSQL REST API over HTTP on the local network.
+MOD-04 Express/PostgreSQL REST API over HTTP.
 
 Endpoints used:
     GET  {base_url}/workers/card/{card_id}   → worker profile + PPE list
     POST {base_url}/entry-logs               → log an inspection result
-
-⚠️  JSON FIELD MAPPING — VERIFY WITH MOD-04 TEAM
-    The field names used here are based on the README and models.py.
-    The MOD-04 team MUST confirm the exact response/request JSON shapes
-    and correct any mismatches before integration.
 
 Dependencies:
     pip install requests
 
 Authors : Alperen Söylen  (220104004024) — Primary
 Date    : 2026-04-11
-Version : 0.1
+Version : 0.2
 
 Changelog:
     v0.1 (2026-04-11) — Initial implementation
+    v0.2 (2026-05-19) — Align field names to confirmed OpenAPI spec v1.4.0;
+                         fix inspection_time_ms (duration, not timestamp);
+                         update default base_url to Heroku deployment.
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from typing import Optional
 
 import requests
@@ -38,7 +35,13 @@ from requests.exceptions import RequestException
 from urllib3.util.retry import Retry
 
 from src.iot_core.interfaces.backend_client import BackendClient
-from src.iot_core.models import WorkerInfo, EntryLog, RequiredPpeItem
+from src.iot_core.models import (
+    WorkerInfo,
+    EntryLog,
+    RequiredPpeItem,
+    SUPPORTED_PPE_KEYS,
+    normalize_ppe_item_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +57,12 @@ class HttpBackendClient(BackendClient):
 
     Args:
         base_url: Root URL of the backend API, without trailing slash.
-                  e.g. "http://192.168.1.50:8000/api"
+                  e.g. "http://192.168.1.50:3000/api"
+
+    Note: RFID webhook owns port 8000 (HttpRfidReader); backend runs on :3000.
     """
 
-    def __init__(self, base_url: str = "http://localhost:8000/api") -> None:
+    def __init__(self, base_url: str = "https://turnstile-backend-04e771aad5b6.herokuapp.com/api") -> None:
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
         
@@ -84,28 +89,8 @@ class HttpBackendClient(BackendClient):
 
         Calls: GET /api/workers/card/{card_id}
 
-        Expected JSON response shape (⚠️ VERIFY WITH MOD-04):
-        {
-            "success": true,
-            "data": {
-                "worker": {
-                    "id": 1,
-                    "full_name": "Ahmet Yılmaz",
-                    "role_name": "Construction Worker"
-                },
-                "required_ppe": [
-                    {
-                        "id": 1,
-                        "item_key": "HELMET",
-                        "display_name": "Hard Hat",
-                        "icon_name": "helmet-icon"
-                    }
-                ]
-            }
-        }
-
         Args:
-            card_id: RFID card UID string (e.g. "1A2B3C4D").
+            card_id: RFID card UID string (e.g. "A3F2C1D4").
 
         Returns:
             WorkerInfo on success, None if card is not registered (404)
@@ -130,7 +115,6 @@ class HttpBackendClient(BackendClient):
             worker_data = data["worker"]
             ppe_data = data.get("required_ppe", [])
 
-            # ⚠️ VERIFY FIELD NAMES WITH MOD-04 TEAM
             worker = WorkerInfo(
                 worker_id=worker_data["id"],
                 worker_name=worker_data["full_name"],
@@ -138,13 +122,24 @@ class HttpBackendClient(BackendClient):
                 required_ppe=[
                     RequiredPpeItem(
                         id=ppe["id"],
-                        item_key=ppe["item_key"],
+                        item_key=normalize_ppe_item_key(ppe["item_key"]),
                         display_name=ppe.get("display_name"),
                         icon_name=ppe.get("icon_name")
                     )
                     for ppe in ppe_data
                 ],
             )
+
+            # Boundary check: MOD-04 must return item_keys from SUPPORTED_PPE_KEYS.
+            # An unknown key here means a contract mismatch with MOD-01/MOD-04 and
+            # will silently fail the worker (missing_ppe will always include it).
+            for ppe in worker.required_ppe:
+                if ppe.item_key not in SUPPORTED_PPE_KEYS:
+                    logger.warning(
+                        "get_worker(%r): backend returned unsupported item_key %r "
+                        "(supported: %s). Inspection for this worker will fail.",
+                        card_id, ppe.item_key, SUPPORTED_PPE_KEYS,
+                    )
             logger.info(
                 "get_worker(%r): %s / %s (PPE: %s)",
                 card_id, worker.worker_name, worker.role, [p.item_key for p in worker.required_ppe],
@@ -167,23 +162,6 @@ class HttpBackendClient(BackendClient):
 
         Calls: POST /api/entry-logs
 
-        Request JSON body sent (⚠️ VERIFY WITH MOD-04):
-        {
-            "worker_id":          "w001",
-            "rfid_uid_scanned":   "1A2B3C4D",
-            "result":             "PASS",         // "PASS" | "FAIL" | "UNKNOWN_CARD"
-            "inspection_time_ms": 1712834400000,
-            "camera_snapshot_url": null,
-            "detections": [
-                {
-                    "ppe_item_id": 1,
-                    "was_required": true,
-                    "was_detected": true,
-                    "confidence": 0.99
-                }
-            ]
-        }
-
         Args:
             log: EntryLog data to persist.
 
@@ -192,24 +170,21 @@ class HttpBackendClient(BackendClient):
         """
         url = f"{self._base_url}/entry-logs"
 
-        # ⚠️ VERIFY FIELD NAMES WITH MOD-04 TEAM
         payload = {
-            "worker_id":          log.worker_id,
-            "rfid_uid_scanned":   log.card_id,
-            "result":             log.decision.name,
-            # MOD-04 Schema constraint: inspection_time_ms is mapped to INT4 in Prisma.
-            # Using seconds instead of milliseconds prevents integer overflow (500 Error).
-            "inspection_time_ms": int(time.time()),
+            "worker_id":           log.worker_id,
+            "rfid_uid_scanned":    log.card_id,
+            "result":              log.decision.name,
+            "inspection_time_ms":  log.inspection_duration_ms,
             "camera_snapshot_url": None,
             "detections": [
                 {
-                    "ppe_item_id": d.ppe_item_id,
+                    "ppe_item_id":  d.ppe_item_id,
                     "was_required": d.was_required,
                     "was_detected": d.was_detected,
-                    "confidence": d.confidence
+                    "confidence":   d.confidence,
                 }
                 for d in log.detections
-            ]
+            ],
         }
 
         try:

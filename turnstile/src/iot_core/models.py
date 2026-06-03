@@ -53,6 +53,48 @@ from typing import Optional
 
 
 # =============================================================================
+# CROSS-MODULE: PPE KEY MAPPING
+# =============================================================================
+#
+# Maps PPEClass enum names (from MOD-01 AI Vision) to the item_key strings
+# used by MOD-04 backend (e.g. RequiredPpeItem.item_key, DetectionItem fields).
+# This is the single source of truth for the naming boundary between modules.
+PPE_CLASS_TO_ITEM_KEY: dict[str, str] = {
+    "HELMET":  "hard_hat",
+    "GLOVES":  "gloves",
+    "VEST":    "safety_vest",
+    "BOOTS":   "safety_boots",
+    "GOGGLES": "safety_goggles",
+}
+
+# Backend item_key strings that the IoT module understands.
+SUPPORTED_PPE_KEYS: tuple[str, ...] = tuple(PPE_CLASS_TO_ITEM_KEY.values())
+
+PPE_ITEM_KEY_ALIASES: dict[str, str] = {
+    "helmet": "hard_hat",
+    "hardhat": "hard_hat",
+    "hard_hat": "hard_hat",
+    "HELMET": "hard_hat",
+    "vest": "safety_vest",
+    "safety_vest": "safety_vest",
+    "VEST": "safety_vest",
+    "gloves": "gloves",
+    "GLOVES": "gloves",
+    "boots": "safety_boots",
+    "safety_boots": "safety_boots",
+    "BOOTS": "safety_boots",
+    "goggles": "safety_goggles",
+    "goggle": "safety_goggles",
+    "safety_goggles": "safety_goggles",
+    "GOGGLES": "safety_goggles",
+}
+
+
+def normalize_ppe_item_key(item_key: str) -> str:
+    return PPE_ITEM_KEY_ALIASES.get(item_key, item_key)
+
+
+# =============================================================================
 # ENUM: ACCESS DECISION
 # =============================================================================
 
@@ -117,10 +159,11 @@ class EntryLog:
     """
     Record of a single access attempt sent to the backend for auditing.
     """
-    card_id:      str
-    worker_id:    Optional[int]
-    decision:     AccessDecision
-    detected_ppe: list[str] = field(default_factory=list)
-    missing_ppe:  list[str] = field(default_factory=list)
-    detections:   list[DetectionItem] = field(default_factory=list)
-    timestamp_ms: int = 0
+    card_id:               str
+    worker_id:             Optional[int]
+    decision:              AccessDecision
+    detected_ppe:          list[str] = field(default_factory=list)
+    missing_ppe:           list[str] = field(default_factory=list)
+    detections:            list[DetectionItem] = field(default_factory=list)
+    timestamp_ms:          int = 0
+    inspection_duration_ms: Optional[int] = None

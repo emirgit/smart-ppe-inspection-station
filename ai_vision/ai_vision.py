@@ -1,0 +1,114 @@
+from __future__ import annotations
+import time
+import numpy as np
+import onnxruntime as ort
+from typing import Callable, Optional, List
+from include.module_ai_vision import (
+    AIVisionModule, AIVisionConfig, CameraFrame,
+    DetectionResult, PPEDetection, DetectedPPE, PPEClass,
+    DetectionCallback, CONFIDENCE_THRESHOLD, MAX_DETECTIONS
+)
+from dataclasses import dataclass
+
+class AIVisionImpl(AIVisionModule):
+    def __init__(self):
+        self.session= None #ONNx model session
+        self._config= None # [AIVisionConfig]
+        self._callback=None
+
+    def init(self, config: Optional[AIVisionConfig] = None) -> bool:
+        self._config = config or AIVisionConfig()
+        try:
+            # ONNX modelini yükle
+            self._session = ort.InferenceSession(self._config.model_path)
+            return True
+        except Exception as e:
+            print(f"Model yüklenemedi: {e}")
+            return False
+    
+    def detect(self, frame: CameraFrame) -> DetectionResult:
+        if self._session is None:
+            return DetectionResult(success=False)
+        try:
+            # 1. Frame'i modele uygun hale getir
+            img = np.frombuffer(frame.data, dtype=np.uint8)
+            img = img.reshape((frame.height, frame.width, 3))
+            img = img.astype(np.float32) / 255.0
+            img = np.transpose(img, (2, 0, 1))   # HWC → CHW
+            img = np.expand_dims(img, axis=0)     # batch boyutu ekle
+
+            # 2. Modeli çalıştır
+            input_name = self._session.get_inputs()[0].name
+            outputs = self._session.run(None, {input_name: img})
+
+            # 3. Sonuçları parse et
+            detections = self._parse_outputs(outputs)
+
+            result = DetectionResult(
+                items=detections,
+                timestamp_ms=int(time.time() * 1000),
+                success=True
+            )
+
+            # 4. Callback varsa çağır
+            if self._callback:
+                self._callback(result)
+
+            return result
+
+        except Exception as e:
+            print(f"Inference hatası: {e}")
+            return DetectionResult(success=False)
+
+    def _parse_outputs(self, outputs) -> list[PPEDetection]:
+        """Model çıktısını PPEDetection listesine çevirir."""
+        detections = []
+        raw = outputs[0][0]  # shape: [num_detections, 6]
+                             # [x_center, y_center, width, height, confidence, class_id]
+
+        for det in raw[:MAX_DETECTIONS]:
+            confidence = float(det[4])
+            if confidence < self._config.conf_threshold:
+                continue
+
+            class_id = int(det[5])
+            try:
+                ppe_class = PPEClass(class_id)
+            except ValueError:
+                continue
+
+            detections.append(PPEDetection(
+                ppe_class=ppe_class,
+                confidence=confidence,
+                x_center=float(det[0]),
+                y_center=float(det[1]),
+                width=float(det[2]),
+                height=float(det[3]),
+            ))
+
+        return detections
+
+    def to_detected_ppe_list(self, result: DetectionResult) -> List[DetectedPPE]:
+        """
+        DetectionResult'ı ekip arkadaşının istediği formata çevirir.
+        MOD-03 bu metodu kullanacak.
+        """
+        return [
+            DetectedPPE(
+                item_key=item.ppe_class.name,   # PPEClass.HELMET → "HELMET"
+                confidence=item.confidence
+            )
+            for item in result.items
+        ]
+
+    def set_callback(self, callback: Optional[DetectionCallback]) -> None:
+        self._callback = callback
+
+    def deinit(self) -> None:
+        self._session = None
+        self._callback = None
+
+
+# MOD-03'ün kullanacağı factory fonksiyonu
+def get_ai_vision_impl() -> AIVisionImpl:
+    return AIVisionImpl()

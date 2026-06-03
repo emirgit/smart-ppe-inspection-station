@@ -1,0 +1,91 @@
+import argparse
+import os
+import sys
+import time
+import logging
+
+# Add the main directory to the python path to locate src and ai_vision modules
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from src.iot_core.orchestrator import IoTOrchestrator
+from src.iot_core.interfaces.iot_module import IoTConfig
+
+# Import necessary components (verify class names match your files)
+from src.iot_core.hardware.gate_control import GateController, NoOpGateController
+from src.iot_core.api_clients.http_backend_client import HttpBackendClient
+from src.iot_core.api_clients.ws_display_client import WebSocketDisplayNotifier
+
+# Uncomment this if you are using an SPI sensor directly connected to the Raspberry Pi:
+# from src.iot_core.hardware.rfid_spi import RfidSpiReader
+# Uncomment this if you are using Wi-Fi RFID reading via ESP32:
+from src.iot_core.hardware.rfid_http_server import HttpRfidReader
+
+from ai_vision.ai_vision import AIVisionImpl
+
+# Logging configuration (to see what is happening in the terminal)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger("MAIN")
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Smart PPE Inspection Station — MOD-03 IoT orchestrator."
+    )
+    parser.add_argument(
+        "--no-gate",
+        action="store_true",
+        help="Run without the PCA9685/servo hardware (uses NoOpGateController). "
+             "Bench testing only — gate commands are logged but not executed.",
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = _parse_args()
+    logger.info("Initializing Smart PPE Inspection Station...")
+
+    # 1. Configure settings
+    # If using the .env library (python-dotenv), you can call load_dotenv() here
+    config = IoTConfig()
+
+    # 2. Initialize sub-components
+    backend = HttpBackendClient()  # default: Heroku deployment
+    display = WebSocketDisplayNotifier(host="0.0.0.0", port=8080, path="/ws/display")
+
+    # Select your RFID hardware (Mock or actual physical device)
+    # rfid = RfidSpiReader()
+    rfid = HttpRfidReader() # Will automatically start the server on port 8000 based on its internal init
+
+    if args.no_gate:
+        logger.warning("--no-gate flag set: using NoOpGateController (no I2C/servo I/O).")
+        gate = NoOpGateController()
+    else:
+        gate = GateController() # Pass GPIO pin number as parameter if necessary
+    ai = AIVisionImpl()
+
+    # 3. Wire components to the Orchestrator
+    orchestrator = IoTOrchestrator(
+        rfid=rfid,
+        backend=backend,
+        display=display,
+        gate=gate,
+        ai=ai,
+        camera_device=0  # 0 or 1 (Camera index)
+    )
+
+    # 4. Start the system
+    if not orchestrator.init(config):
+        logger.error("Failed to initialize components. Shutting down...")
+        sys.exit(1)
+
+    try:
+        logger.info("System entering main control loop (IDLE)...")
+        orchestrator.run() # This loop runs continuously
+    except KeyboardInterrupt:
+        logger.info("Stopped by user (Ctrl+C). Shutting down...")
+    finally:
+        orchestrator.stop()
+        logger.info("Shutdown routine completed.")
+
+if __name__ == "__main__":
+    main()
