@@ -1,0 +1,1632 @@
+﻿{
+    "openapi":  "3.0.3",
+    "info":  {
+                 "title":  "PPE Inspection Station API",
+                 "description":  "REST API contract for Admin Panel and Raspberry Pi integration in the PPE inspection turnstile system.",
+                 "version":  "1.2.0"
+             },
+    "servers":  [
+                    {
+                        "url":  "http://localhost:8000",
+                        "description":  "Local reference server"
+                    }
+                ],
+    "tags":  [
+                 {
+                     "name":  "Health",
+                     "description":  "Service health checks"
+                 },
+                 {
+                     "name":  "Workers",
+                     "description":  "Worker management endpoints"
+                 },
+                 {
+                     "name":  "Roles",
+                     "description":  "Role and role-PPE requirements"
+                 },
+                 {
+                     "name":  "PPE Items",
+                     "description":  "Master PPE item catalog"
+                 },
+                 {
+                     "name":  "Entry Logs",
+                     "description":  "Inspection log ingestion and querying"
+                 }
+             ],
+    "paths":  {
+                  "/api/health":  {
+                                      "get":  {
+                                                  "tags":  [
+                                                               "Health"
+                                                           ],
+                                                  "summary":  "Health check",
+                                                  "responses":  {
+                                                                    "200":  {
+                                                                                "description":  "Service is healthy",
+                                                                                "content":  {
+                                                                                                "application/json":  {
+                                                                                                                         "schema":  {
+                                                                                                                                        "type":  "object",
+                                                                                                                                        "properties":  {
+                                                                                                                                                           "status":  {
+                                                                                                                                                                          "type":  "string",
+                                                                                                                                                                          "example":  "ok"
+                                                                                                                                                                      },
+                                                                                                                                                           "timestamp":  {
+                                                                                                                                                                             "type":  "string",
+                                                                                                                                                                             "format":  "date-time"
+                                                                                                                                                                         }
+                                                                                                                                                       }
+                                                                                                                                    }
+                                                                                                                     }
+                                                                                            }
+                                                                            }
+                                                                }
+                                              }
+                                  },
+                  "/api/workers":  {
+                                       "get":  {
+                                                   "tags":  [
+                                                                "Workers"
+                                                            ],
+                                                   "summary":  "List workers",
+                                                   "parameters":  [
+                                                                      {
+                                                                          "in":  "query",
+                                                                          "name":  "is_active",
+                                                                          "schema":  {
+                                                                                         "type":  "boolean"
+                                                                                     },
+                                                                          "required":  false,
+                                                                          "description":  "Filter by active status"
+                                                                      },
+                                                                      {
+                                                                          "in":  "query",
+                                                                          "name":  "role_id",
+                                                                          "schema":  {
+                                                                                         "type":  "integer"
+                                                                                     },
+                                                                          "required":  false,
+                                                                          "description":  "Filter by role ID"
+                                                                      }
+                                                                  ],
+                                                   "responses":  {
+                                                                     "200":  {
+                                                                                 "description":  "Workers list",
+                                                                                 "content":  {
+                                                                                                 "application/json":  {
+                                                                                                                          "schema":  {
+                                                                                                                                         "$ref":  "#/components/schemas/WorkersListResponse"
+                                                                                                                                     }
+                                                                                                                      }
+                                                                                             }
+                                                                             }
+                                                                 }
+                                               },
+                                       "post":  {
+                                                    "tags":  [
+                                                                 "Workers"
+                                                             ],
+                                                    "summary":  "Create worker",
+                                                    "requestBody":  {
+                                                                        "required":  true,
+                                                                        "content":  {
+                                                                                        "application/json":  {
+                                                                                                                 "schema":  {
+                                                                                                                                "$ref":  "#/components/schemas/CreateWorkerRequest"
+                                                                                                                            }
+                                                                                                             }
+                                                                                    }
+                                                                    },
+                                                    "responses":  {
+                                                                      "201":  {
+                                                                                  "description":  "Worker created",
+                                                                                  "content":  {
+                                                                                                  "application/json":  {
+                                                                                                                           "schema":  {
+                                                                                                                                          "$ref":  "#/components/schemas/WorkerSingleResponse"
+                                                                                                                                      }
+                                                                                                                       }
+                                                                                              }
+                                                                              },
+                                                                      "404":  {
+                                                                                  "description":  "Role not found",
+                                                                                  "content":  {
+                                                                                                  "application/json":  {
+                                                                                                                           "schema":  {
+                                                                                                                                          "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                      }
+                                                                                                                       }
+                                                                                              }
+                                                                              },
+                                                                      "409":  {
+                                                                                  "description":  "RFID already registered",
+                                                                                  "content":  {
+                                                                                                  "application/json":  {
+                                                                                                                           "schema":  {
+                                                                                                                                          "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                      }
+                                                                                                                       }
+                                                                                              }
+                                                                              },
+                                                                      "422":  {
+                                                                                  "description":  "Validation error",
+                                                                                  "content":  {
+                                                                                                  "application/json":  {
+                                                                                                                           "schema":  {
+                                                                                                                                          "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                      }
+                                                                                                                       }
+                                                                                              }
+                                                                              }
+                                                                  }
+                                                }
+                                   },
+                  "/api/workers/{id}":  {
+                                            "get":  {
+                                                        "tags":  [
+                                                                     "Workers"
+                                                                 ],
+                                                        "summary":  "Get worker by ID",
+                                                        "parameters":  [
+                                                                           {
+                                                                               "name":  "id",
+                                                                               "in":  "path",
+                                                                               "required":  true,
+                                                                               "schema":  {
+                                                                                              "type":  "integer"
+                                                                                          }
+                                                                           }
+                                                                       ],
+                                                        "responses":  {
+                                                                          "200":  {
+                                                                                      "description":  "Worker found",
+                                                                                      "content":  {
+                                                                                                      "application/json":  {
+                                                                                                                               "schema":  {
+                                                                                                                                              "$ref":  "#/components/schemas/WorkerSingleResponse"
+                                                                                                                                          }
+                                                                                                                           }
+                                                                                                  }
+                                                                                  },
+                                                                          "404":  {
+                                                                                      "description":  "Worker not found",
+                                                                                      "content":  {
+                                                                                                      "application/json":  {
+                                                                                                                               "schema":  {
+                                                                                                                                              "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                          }
+                                                                                                                           }
+                                                                                                  }
+                                                                                  }
+                                                                      }
+                                                    },
+                                            "put":  {
+                                                        "tags":  [
+                                                                     "Workers"
+                                                                 ],
+                                                        "summary":  "Partially update worker",
+                                                        "parameters":  [
+                                                                           {
+                                                                               "name":  "id",
+                                                                               "in":  "path",
+                                                                               "required":  true,
+                                                                               "schema":  {
+                                                                                              "type":  "integer"
+                                                                                          }
+                                                                           }
+                                                                       ],
+                                                        "requestBody":  {
+                                                                            "required":  true,
+                                                                            "content":  {
+                                                                                            "application/json":  {
+                                                                                                                     "schema":  {
+                                                                                                                                    "$ref":  "#/components/schemas/UpdateWorkerRequest"
+                                                                                                                                }
+                                                                                                                 }
+                                                                                        }
+                                                                        },
+                                                        "responses":  {
+                                                                          "200":  {
+                                                                                      "description":  "Worker updated",
+                                                                                      "content":  {
+                                                                                                      "application/json":  {
+                                                                                                                               "schema":  {
+                                                                                                                                              "$ref":  "#/components/schemas/WorkerSingleResponse"
+                                                                                                                                          }
+                                                                                                                           }
+                                                                                                  }
+                                                                                  },
+                                                                          "404":  {
+                                                                                      "description":  "Worker not found",
+                                                                                      "content":  {
+                                                                                                      "application/json":  {
+                                                                                                                               "schema":  {
+                                                                                                                                              "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                          }
+                                                                                                                           }
+                                                                                                  }
+                                                                                  },
+                                                                          "409":  {
+                                                                                      "description":  "Conflict error",
+                                                                                      "content":  {
+                                                                                                      "application/json":  {
+                                                                                                                               "schema":  {
+                                                                                                                                              "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                          }
+                                                                                                                           }
+                                                                                                  }
+                                                                                  }
+                                                                      }
+                                                    },
+                                            "delete":  {
+                                                           "tags":  [
+                                                                        "Workers"
+                                                                    ],
+                                                           "summary":  "Soft-delete worker",
+                                                           "parameters":  [
+                                                                              {
+                                                                                  "name":  "id",
+                                                                                  "in":  "path",
+                                                                                  "required":  true,
+                                                                                  "schema":  {
+                                                                                                 "type":  "integer"
+                                                                                             }
+                                                                              }
+                                                                          ],
+                                                           "responses":  {
+                                                                             "200":  {
+                                                                                         "description":  "Worker deactivated",
+                                                                                         "content":  {
+                                                                                                         "application/json":  {
+                                                                                                                                  "schema":  {
+                                                                                                                                                 "type":  "object",
+                                                                                                                                                 "properties":  {
+                                                                                                                                                                    "success":  {
+                                                                                                                                                                                    "type":  "boolean",
+                                                                                                                                                                                    "example":  true
+                                                                                                                                                                                },
+                                                                                                                                                                    "message":  {
+                                                                                                                                                                                    "type":  "string",
+                                                                                                                                                                                    "example":  "Worker deactivated"
+                                                                                                                                                                                },
+                                                                                                                                                                    "data":  {
+                                                                                                                                                                                 "type":  "object",
+                                                                                                                                                                                 "properties":  "@{id=; is_active=}"
+                                                                                                                                                                             }
+                                                                                                                                                                }
+                                                                                                                                             }
+                                                                                                                              }
+                                                                                                     }
+                                                                                     },
+                                                                             "404":  {
+                                                                                         "description":  "Worker not found",
+                                                                                         "content":  {
+                                                                                                         "application/json":  {
+                                                                                                                                  "schema":  {
+                                                                                                                                                 "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                             }
+                                                                                                                              }
+                                                                                                     }
+                                                                                     }
+                                                                         }
+                                                       }
+                                        },
+                  "/api/workers/card/{uid}":  {
+                                                  "get":  {
+                                                              "tags":  [
+                                                                           "Workers"
+                                                                       ],
+                                                              "summary":  "Validate RFID card and fetch worker PPE requirements",
+                                                              "description":  "Critical RPi endpoint (inspection flow step 2).",
+                                                              "parameters":  [
+                                                                                 {
+                                                                                     "name":  "uid",
+                                                                                     "in":  "path",
+                                                                                     "required":  true,
+                                                                                     "schema":  {
+                                                                                                    "type":  "string"
+                                                                                                },
+                                                                                     "description":  "RFID card UID"
+                                                                                 }
+                                                                             ],
+                                                              "responses":  {
+                                                                                "200":  {
+                                                                                            "description":  "Registered card",
+                                                                                            "content":  {
+                                                                                                            "application/json":  {
+                                                                                                                                     "schema":  {
+                                                                                                                                                    "$ref":  "#/components/schemas/WorkerCardLookupResponse"
+                                                                                                                                                }
+                                                                                                                                 }
+                                                                                                        }
+                                                                                        },
+                                                                                "404":  {
+                                                                                            "description":  "Card not registered",
+                                                                                            "content":  {
+                                                                                                            "application/json":  {
+                                                                                                                                     "schema":  {
+                                                                                                                                                    "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                                }
+                                                                                                                                 }
+                                                                                                        }
+                                                                                        }
+                                                                            }
+                                                          }
+                                              },
+                  "/api/roles":  {
+                                     "get":  {
+                                                 "tags":  [
+                                                              "Roles"
+                                                          ],
+                                                 "summary":  "List roles",
+                                                 "responses":  {
+                                                                   "200":  {
+                                                                               "description":  "Roles list",
+                                                                               "content":  {
+                                                                                               "application/json":  {
+                                                                                                                        "schema":  {
+                                                                                                                                       "$ref":  "#/components/schemas/RolesListResponse"
+                                                                                                                                   }
+                                                                                                                    }
+                                                                                           }
+                                                                           }
+                                                               }
+                                             },
+                                     "post":  {
+                                                  "tags":  [
+                                                               "Roles"
+                                                           ],
+                                                  "summary":  "Create role",
+                                                  "requestBody":  {
+                                                                      "required":  true,
+                                                                      "content":  {
+                                                                                      "application/json":  {
+                                                                                                               "schema":  {
+                                                                                                                              "$ref":  "#/components/schemas/CreateRoleRequest"
+                                                                                                                          }
+                                                                                                           }
+                                                                                  }
+                                                                  },
+                                                  "responses":  {
+                                                                    "201":  {
+                                                                                "description":  "Role created",
+                                                                                "content":  {
+                                                                                                "application/json":  {
+                                                                                                                         "schema":  {
+                                                                                                                                        "$ref":  "#/components/schemas/RoleSingleResponse"
+                                                                                                                                    }
+                                                                                                                     }
+                                                                                            }
+                                                                            },
+                                                                    "409":  {
+                                                                                "description":  "Role already exists",
+                                                                                "content":  {
+                                                                                                "application/json":  {
+                                                                                                                         "schema":  {
+                                                                                                                                        "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                    }
+                                                                                                                     }
+                                                                                            }
+                                                                            },
+                                                                    "422":  {
+                                                                                "description":  "Validation error",
+                                                                                "content":  {
+                                                                                                "application/json":  {
+                                                                                                                         "schema":  {
+                                                                                                                                        "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                    }
+                                                                                                                     }
+                                                                                            }
+                                                                            }
+                                                                }
+                                              }
+                                 },
+                  "/api/roles/{id}/ppe":  {
+                                              "get":  {
+                                                          "tags":  [
+                                                                       "Roles"
+                                                                   ],
+                                                          "summary":  "Get required PPE for role",
+                                                          "parameters":  [
+                                                                             {
+                                                                                 "name":  "id",
+                                                                                 "in":  "path",
+                                                                                 "required":  true,
+                                                                                 "schema":  {
+                                                                                                "type":  "integer"
+                                                                                            }
+                                                                             }
+                                                                         ],
+                                                          "responses":  {
+                                                                            "200":  {
+                                                                                        "description":  "Role PPE requirements",
+                                                                                        "content":  {
+                                                                                                        "application/json":  {
+                                                                                                                                 "schema":  {
+                                                                                                                                                "$ref":  "#/components/schemas/RolePpeResponse"
+                                                                                                                                            }
+                                                                                                                             }
+                                                                                                    }
+                                                                                    },
+                                                                            "404":  {
+                                                                                        "description":  "Role not found",
+                                                                                        "content":  {
+                                                                                                        "application/json":  {
+                                                                                                                                 "schema":  {
+                                                                                                                                                "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                            }
+                                                                                                                             }
+                                                                                                    }
+                                                                                    }
+                                                                        }
+                                                      },
+                                              "put":  {
+                                                          "tags":  [
+                                                                       "Roles"
+                                                                   ],
+                                                          "summary":  "Replace PPE requirements for role",
+                                                          "description":  "Replace operation: submitted list fully replaces existing role PPE requirements.",
+                                                          "parameters":  [
+                                                                             {
+                                                                                 "name":  "id",
+                                                                                 "in":  "path",
+                                                                                 "required":  true,
+                                                                                 "schema":  {
+                                                                                                "type":  "integer"
+                                                                                            }
+                                                                             }
+                                                                         ],
+                                                          "requestBody":  {
+                                                                              "required":  true,
+                                                                              "content":  {
+                                                                                              "application/json":  {
+                                                                                                                       "schema":  {
+                                                                                                                                      "type":  "object",
+                                                                                                                                      "required":  [
+                                                                                                                                                       "ppe_item_ids"
+                                                                                                                                                   ],
+                                                                                                                                      "properties":  {
+                                                                                                                                                         "ppe_item_ids":  {
+                                                                                                                                                                              "type":  "array",
+                                                                                                                                                                              "items":  {
+                                                                                                                                                                                            "type":  "integer"
+                                                                                                                                                                                        },
+                                                                                                                                                                              "example":  [
+                                                                                                                                                                                              1,
+                                                                                                                                                                                              2,
+                                                                                                                                                                                              3
+                                                                                                                                                                                          ]
+                                                                                                                                                                          }
+                                                                                                                                                     }
+                                                                                                                                  }
+                                                                                                                   }
+                                                                                          }
+                                                                          },
+                                                          "responses":  {
+                                                                            "200":  {
+                                                                                        "description":  "Updated role PPE requirements",
+                                                                                        "content":  {
+                                                                                                        "application/json":  {
+                                                                                                                                 "schema":  {
+                                                                                                                                                "$ref":  "#/components/schemas/RolePpeResponse"
+                                                                                                                                            }
+                                                                                                                             }
+                                                                                                    }
+                                                                                    },
+                                                                            "404":  {
+                                                                                        "description":  "Role not found",
+                                                                                        "content":  {
+                                                                                                        "application/json":  {
+                                                                                                                                 "schema":  {
+                                                                                                                                                "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                            }
+                                                                                                                             }
+                                                                                                    }
+                                                                                    },
+                                                                            "422":  {
+                                                                                        "description":  "Validation error",
+                                                                                        "content":  {
+                                                                                                        "application/json":  {
+                                                                                                                                 "schema":  {
+                                                                                                                                                "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                            }
+                                                                                                                             }
+                                                                                                    }
+                                                                                    }
+                                                                        }
+                                                      }
+                                          },
+                  "/api/ppe-items":  {
+                                         "get":  {
+                                                     "tags":  [
+                                                                  "PPE Items"
+                                                              ],
+                                                     "summary":  "List all PPE items",
+                                                     "description":  "item_key values should match AI model class labels exactly.",
+                                                     "responses":  {
+                                                                       "200":  {
+                                                                                   "description":  "PPE item list",
+                                                                                   "content":  {
+                                                                                                   "application/json":  {
+                                                                                                                            "schema":  {
+                                                                                                                                           "$ref":  "#/components/schemas/PpeItemsListResponse"
+                                                                                                                                       }
+                                                                                                                        }
+                                                                                               }
+                                                                               }
+                                                                   }
+                                                 },
+                                         "post":  {
+                                                      "tags":  [
+                                                                   "PPE Items"
+                                                               ],
+                                                      "summary":  "Create PPE item",
+                                                      "description":  "item_key must match AI model class label.",
+                                                      "requestBody":  {
+                                                                          "required":  true,
+                                                                          "content":  {
+                                                                                          "application/json":  {
+                                                                                                                   "schema":  {
+                                                                                                                                  "$ref":  "#/components/schemas/CreatePpeItemRequest"
+                                                                                                                              }
+                                                                                                               }
+                                                                                      }
+                                                                      },
+                                                      "responses":  {
+                                                                        "201":  {
+                                                                                    "description":  "PPE item created",
+                                                                                    "content":  {
+                                                                                                    "application/json":  {
+                                                                                                                             "schema":  {
+                                                                                                                                            "$ref":  "#/components/schemas/PpeItemSingleResponse"
+                                                                                                                                        }
+                                                                                                                         }
+                                                                                                }
+                                                                                },
+                                                                        "409":  {
+                                                                                    "description":  "item_key already exists",
+                                                                                    "content":  {
+                                                                                                    "application/json":  {
+                                                                                                                             "schema":  {
+                                                                                                                                            "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                        }
+                                                                                                                         }
+                                                                                                }
+                                                                                },
+                                                                        "422":  {
+                                                                                    "description":  "Validation error",
+                                                                                    "content":  {
+                                                                                                    "application/json":  {
+                                                                                                                             "schema":  {
+                                                                                                                                            "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                        }
+                                                                                                                         }
+                                                                                                }
+                                                                                }
+                                                                    }
+                                                  }
+                                     },
+                  "/api/ppe-items/{id}":  {
+                                              "get":  {
+                                                          "tags":  [
+                                                                       "PPE Items"
+                                                                   ],
+                                                          "summary":  "Get PPE item by ID",
+                                                          "parameters":  [
+                                                                             {
+                                                                                 "name":  "id",
+                                                                                 "in":  "path",
+                                                                                 "required":  true,
+                                                                                 "schema":  {
+                                                                                                "type":  "integer"
+                                                                                            }
+                                                                             }
+                                                                         ],
+                                                          "responses":  {
+                                                                            "200":  {
+                                                                                        "description":  "PPE item found",
+                                                                                        "content":  {
+                                                                                                        "application/json":  {
+                                                                                                                                 "schema":  {
+                                                                                                                                                "$ref":  "#/components/schemas/PpeItemSingleResponse"
+                                                                                                                                            }
+                                                                                                                             }
+                                                                                                    }
+                                                                                    },
+                                                                            "404":  {
+                                                                                        "description":  "PPE item not found",
+                                                                                        "content":  {
+                                                                                                        "application/json":  {
+                                                                                                                                 "schema":  {
+                                                                                                                                                "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                            }
+                                                                                                                             }
+                                                                                                    }
+                                                                                    }
+                                                                        }
+                                                      },
+                                              "put":  {
+                                                          "tags":  [
+                                                                       "PPE Items"
+                                                                   ],
+                                                          "summary":  "Update PPE item",
+                                                          "parameters":  [
+                                                                             {
+                                                                                 "name":  "id",
+                                                                                 "in":  "path",
+                                                                                 "required":  true,
+                                                                                 "schema":  {
+                                                                                                "type":  "integer"
+                                                                                            }
+                                                                             }
+                                                                         ],
+                                                          "requestBody":  {
+                                                                              "required":  true,
+                                                                              "content":  {
+                                                                                              "application/json":  {
+                                                                                                                       "schema":  {
+                                                                                                                                      "$ref":  "#/components/schemas/UpdatePpeItemRequest"
+                                                                                                                                  }
+                                                                                                                   }
+                                                                                          }
+                                                                          },
+                                                          "responses":  {
+                                                                            "200":  {
+                                                                                        "description":  "PPE item updated",
+                                                                                        "content":  {
+                                                                                                        "application/json":  {
+                                                                                                                                 "schema":  {
+                                                                                                                                                "$ref":  "#/components/schemas/PpeItemSingleResponse"
+                                                                                                                                            }
+                                                                                                                             }
+                                                                                                    }
+                                                                                    },
+                                                                            "404":  {
+                                                                                        "description":  "PPE item not found",
+                                                                                        "content":  {
+                                                                                                        "application/json":  {
+                                                                                                                                 "schema":  {
+                                                                                                                                                "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                            }
+                                                                                                                             }
+                                                                                                    }
+                                                                                    },
+                                                                            "409":  {
+                                                                                        "description":  "item_key already exists",
+                                                                                        "content":  {
+                                                                                                        "application/json":  {
+                                                                                                                                 "schema":  {
+                                                                                                                                                "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                            }
+                                                                                                                             }
+                                                                                                    }
+                                                                                    }
+                                                                        }
+                                                      },
+                                              "delete":  {
+                                                             "tags":  [
+                                                                          "PPE Items"
+                                                                      ],
+                                                             "summary":  "Delete PPE item",
+                                                             "parameters":  [
+                                                                                {
+                                                                                    "name":  "id",
+                                                                                    "in":  "path",
+                                                                                    "required":  true,
+                                                                                    "schema":  {
+                                                                                                   "type":  "integer"
+                                                                                               }
+                                                                                }
+                                                                            ],
+                                                             "responses":  {
+                                                                               "200":  {
+                                                                                           "description":  "PPE item deleted",
+                                                                                           "content":  {
+                                                                                                           "application/json":  {
+                                                                                                                                    "schema":  {
+                                                                                                                                                   "type":  "object",
+                                                                                                                                                   "properties":  {
+                                                                                                                                                                      "success":  {
+                                                                                                                                                                                      "type":  "boolean",
+                                                                                                                                                                                      "example":  true
+                                                                                                                                                                                  },
+                                                                                                                                                                      "message":  {
+                                                                                                                                                                                      "type":  "string",
+                                                                                                                                                                                      "example":  "PPE item deleted"
+                                                                                                                                                                                  },
+                                                                                                                                                                      "data":  {
+                                                                                                                                                                                   "type":  "object",
+                                                                                                                                                                                   "properties":  "@{id=}"
+                                                                                                                                                                               }
+                                                                                                                                                                  }
+                                                                                                                                               }
+                                                                                                                                }
+                                                                                                       }
+                                                                                       },
+                                                                               "404":  {
+                                                                                           "description":  "PPE item not found",
+                                                                                           "content":  {
+                                                                                                           "application/json":  {
+                                                                                                                                    "schema":  {
+                                                                                                                                                   "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                               }
+                                                                                                                                }
+                                                                                                       }
+                                                                                       },
+                                                                               "409":  {
+                                                                                           "description":  "PPE item is assigned to roles",
+                                                                                           "content":  {
+                                                                                                           "application/json":  {
+                                                                                                                                    "schema":  {
+                                                                                                                                                   "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                               }
+                                                                                                                                }
+                                                                                                       }
+                                                                                       }
+                                                                           }
+                                                         }
+                                          },
+                  "/api/entry-logs":  {
+                                          "post":  {
+                                                       "tags":  [
+                                                                    "Entry Logs"
+                                                                ],
+                                                       "summary":  "Create inspection entry log",
+                                                       "description":  "Critical RPi endpoint (inspection flow step 6).",
+                                                       "requestBody":  {
+                                                                           "required":  true,
+                                                                           "content":  {
+                                                                                           "application/json":  {
+                                                                                                                    "schema":  {
+                                                                                                                                   "$ref":  "#/components/schemas/CreateEntryLogRequest"
+                                                                                                                               }
+                                                                                                                }
+                                                                                       }
+                                                                       },
+                                                       "responses":  {
+                                                                         "201":  {
+                                                                                     "description":  "Entry log created",
+                                                                                     "content":  {
+                                                                                                     "application/json":  {
+                                                                                                                              "schema":  {
+                                                                                                                                             "$ref":  "#/components/schemas/EntryLogCreateResponse"
+                                                                                                                                         }
+                                                                                                                          }
+                                                                                                 }
+                                                                                 },
+                                                                         "422":  {
+                                                                                     "description":  "Validation error",
+                                                                                     "content":  {
+                                                                                                     "application/json":  {
+                                                                                                                              "schema":  {
+                                                                                                                                             "$ref":  "#/components/schemas/ErrorEnvelope"
+                                                                                                                                         }
+                                                                                                                          }
+                                                                                                 }
+                                                                                 }
+                                                                     }
+                                                   },
+                                          "get":  {
+                                                      "tags":  [
+                                                                   "Entry Logs"
+                                                               ],
+                                                      "summary":  "List entry logs",
+                                                      "parameters":  [
+                                                                         {
+                                                                             "in":  "query",
+                                                                             "name":  "worker_id",
+                                                                             "schema":  {
+                                                                                            "type":  "integer"
+                                                                                        },
+                                                                             "required":  false
+                                                                         },
+                                                                         {
+                                                                             "in":  "query",
+                                                                             "name":  "result",
+                                                                             "schema":  {
+                                                                                            "type":  "string",
+                                                                                            "enum":  [
+                                                                                                         "PASS",
+                                                                                                         "FAIL",
+                                                                                                         "UNKNOWN_CARD"
+                                                                                                     ]
+                                                                                        },
+                                                                             "required":  false
+                                                                         },
+                                                                         {
+                                                                             "in":  "query",
+                                                                             "name":  "start_date",
+                                                                             "schema":  {
+                                                                                            "type":  "string",
+                                                                                            "format":  "date"
+                                                                                        },
+                                                                             "required":  false
+                                                                         },
+                                                                         {
+                                                                             "in":  "query",
+                                                                             "name":  "end_date",
+                                                                             "schema":  {
+                                                                                            "type":  "string",
+                                                                                            "format":  "date"
+                                                                                        },
+                                                                             "required":  false
+                                                                         },
+                                                                         {
+                                                                             "in":  "query",
+                                                                             "name":  "limit",
+                                                                             "schema":  {
+                                                                                            "type":  "integer",
+                                                                                            "default":  50
+                                                                                        },
+                                                                             "required":  false
+                                                                         },
+                                                                         {
+                                                                             "in":  "query",
+                                                                             "name":  "offset",
+                                                                             "schema":  {
+                                                                                            "type":  "integer",
+                                                                                            "default":  0
+                                                                                        },
+                                                                             "required":  false
+                                                                         }
+                                                                     ],
+                                                      "responses":  {
+                                                                        "200":  {
+                                                                                    "description":  "Entry log list",
+                                                                                    "content":  {
+                                                                                                    "application/json":  {
+                                                                                                                             "schema":  {
+                                                                                                                                            "$ref":  "#/components/schemas/EntryLogsListResponse"
+                                                                                                                                        }
+                                                                                                                         }
+                                                                                                }
+                                                                                }
+                                                                    }
+                                                  }
+                                      },
+                  "/api/entry-logs/stats":  {
+                                                "get":  {
+                                                            "tags":  [
+                                                                         "Entry Logs"
+                                                                     ],
+                                                            "summary":  "Get compliance dashboard stats",
+                                                            "parameters":  [
+                                                                               {
+                                                                                   "in":  "query",
+                                                                                   "name":  "start_date",
+                                                                                   "schema":  {
+                                                                                                  "type":  "string",
+                                                                                                  "format":  "date"
+                                                                                              },
+                                                                                   "required":  false
+                                                                               },
+                                                                               {
+                                                                                   "in":  "query",
+                                                                                   "name":  "end_date",
+                                                                                   "schema":  {
+                                                                                                  "type":  "string",
+                                                                                                  "format":  "date"
+                                                                                              },
+                                                                                   "required":  false
+                                                                               }
+                                                                           ],
+                                                            "responses":  {
+                                                                              "200":  {
+                                                                                          "description":  "Compliance statistics",
+                                                                                          "content":  {
+                                                                                                          "application/json":  {
+                                                                                                                                   "schema":  {
+                                                                                                                                                  "$ref":  "#/components/schemas/EntryLogStatsResponse"
+                                                                                                                                              }
+                                                                                                                               }
+                                                                                                      }
+                                                                                      }
+                                                                          }
+                                                        }
+                                            }
+              },
+    "components":  {
+                       "schemas":  {
+                                       "ErrorEnvelope":  {
+                                                             "type":  "object",
+                                                             "required":  [
+                                                                              "success",
+                                                                              "error"
+                                                                          ],
+                                                             "properties":  {
+                                                                                "success":  {
+                                                                                                "type":  "boolean",
+                                                                                                "example":  false
+                                                                                            },
+                                                                                "error":  {
+                                                                                              "type":  "object",
+                                                                                              "required":  [
+                                                                                                               "code",
+                                                                                                               "message"
+                                                                                                           ],
+                                                                                              "properties":  {
+                                                                                                                 "code":  {
+                                                                                                                              "type":  "integer",
+                                                                                                                              "example":  404
+                                                                                                                          },
+                                                                                                                 "message":  {
+                                                                                                                                 "type":  "string",
+                                                                                                                                 "example":  "Worker not found"
+                                                                                                                             }
+                                                                                                             }
+                                                                                          }
+                                                                            }
+                                                         },
+                                       "Worker":  {
+                                                      "type":  "object",
+                                                      "properties":  {
+                                                                         "id":  {
+                                                                                    "type":  "integer",
+                                                                                    "example":  1
+                                                                                },
+                                                                         "full_name":  {
+                                                                                           "type":  "string",
+                                                                                           "example":  "Ali Yilmaz"
+                                                                                       },
+                                                                         "rfid_card_uid":  {
+                                                                                               "type":  "string",
+                                                                                               "example":  "A3F2C1D4"
+                                                                                           },
+                                                                         "role_id":  {
+                                                                                         "type":  "integer",
+                                                                                         "example":  2
+                                                                                     },
+                                                                         "role_name":  {
+                                                                                           "type":  "string",
+                                                                                           "example":  "Technician"
+                                                                                       },
+                                                                         "is_active":  {
+                                                                                           "type":  "boolean",
+                                                                                           "example":  true
+                                                                                       },
+                                                                         "photo_url":  {
+                                                                                           "type":  "string",
+                                                                                           "nullable":  true,
+                                                                                           "example":  "/uploads/workers/1.jpg"
+                                                                                       },
+                                                                         "created_at":  {
+                                                                                            "type":  "string",
+                                                                                            "format":  "date-time"
+                                                                                        },
+                                                                         "updated_at":  {
+                                                                                            "type":  "string",
+                                                                                            "format":  "date-time",
+                                                                                            "nullable":  true
+                                                                                        }
+                                                                     }
+                                                  },
+                                       "WorkersListResponse":  {
+                                                                   "type":  "object",
+                                                                   "properties":  {
+                                                                                      "success":  {
+                                                                                                      "type":  "boolean",
+                                                                                                      "example":  true
+                                                                                                  },
+                                                                                      "data":  {
+                                                                                                   "type":  "array",
+                                                                                                   "items":  {
+                                                                                                                 "$ref":  "#/components/schemas/Worker"
+                                                                                                             }
+                                                                                               },
+                                                                                      "total":  {
+                                                                                                    "type":  "integer",
+                                                                                                    "example":  42
+                                                                                                }
+                                                                                  }
+                                                               },
+                                       "WorkerSingleResponse":  {
+                                                                    "type":  "object",
+                                                                    "properties":  {
+                                                                                       "success":  {
+                                                                                                       "type":  "boolean",
+                                                                                                       "example":  true
+                                                                                                   },
+                                                                                       "data":  {
+                                                                                                    "$ref":  "#/components/schemas/Worker"
+                                                                                                }
+                                                                                   }
+                                                                },
+                                       "CreateWorkerRequest":  {
+                                                                   "type":  "object",
+                                                                   "required":  [
+                                                                                    "full_name",
+                                                                                    "rfid_card_uid",
+                                                                                    "role_id"
+                                                                                ],
+                                                                   "properties":  {
+                                                                                      "full_name":  {
+                                                                                                        "type":  "string",
+                                                                                                        "example":  "Mehmet Kara"
+                                                                                                    },
+                                                                                      "rfid_card_uid":  {
+                                                                                                            "type":  "string",
+                                                                                                            "example":  "B4E1A2C3"
+                                                                                                        },
+                                                                                      "role_id":  {
+                                                                                                      "type":  "integer",
+                                                                                                      "example":  2
+                                                                                                  },
+                                                                                      "photo_url":  {
+                                                                                                        "type":  "string",
+                                                                                                        "nullable":  true,
+                                                                                                        "example":  "/uploads/workers/2.jpg"
+                                                                                                    }
+                                                                                  }
+                                                               },
+                                       "UpdateWorkerRequest":  {
+                                                                   "type":  "object",
+                                                                   "properties":  {
+                                                                                      "full_name":  {
+                                                                                                        "type":  "string"
+                                                                                                    },
+                                                                                      "rfid_card_uid":  {
+                                                                                                            "type":  "string"
+                                                                                                        },
+                                                                                      "role_id":  {
+                                                                                                      "type":  "integer"
+                                                                                                  },
+                                                                                      "photo_url":  {
+                                                                                                        "type":  "string",
+                                                                                                        "nullable":  true
+                                                                                                    }
+                                                                                  }
+                                                               },
+                                       "RequiredPpeItem":  {
+                                                               "type":  "object",
+                                                               "properties":  {
+                                                                                  "id":  {
+                                                                                             "type":  "integer",
+                                                                                             "example":  1
+                                                                                         },
+                                                                                  "item_key":  {
+                                                                                                   "type":  "string",
+                                                                                                   "example":  "hard_hat"
+                                                                                               },
+                                                                                  "display_name":  {
+                                                                                                       "type":  "string",
+                                                                                                       "example":  "Hard Hat"
+                                                                                                   },
+                                                                                  "icon_name":  {
+                                                                                                    "type":  "string",
+                                                                                                    "example":  "helmet"
+                                                                                                }
+                                                                              }
+                                                           },
+                                       "WorkerCardLookupResponse":  {
+                                                                        "type":  "object",
+                                                                        "properties":  {
+                                                                                           "success":  {
+                                                                                                           "type":  "boolean",
+                                                                                                           "example":  true
+                                                                                                       },
+                                                                                           "data":  {
+                                                                                                        "type":  "object",
+                                                                                                        "properties":  {
+                                                                                                                           "worker":  {
+                                                                                                                                          "type":  "object",
+                                                                                                                                          "properties":  {
+                                                                                                                                                             "id":  {
+                                                                                                                                                                        "type":  "integer",
+                                                                                                                                                                        "example":  1
+                                                                                                                                                                    },
+                                                                                                                                                             "full_name":  {
+                                                                                                                                                                               "type":  "string",
+                                                                                                                                                                               "example":  "Ali Yilmaz"
+                                                                                                                                                                           },
+                                                                                                                                                             "photo_url":  {
+                                                                                                                                                                               "type":  "string",
+                                                                                                                                                                               "nullable":  true
+                                                                                                                                                                           },
+                                                                                                                                                             "role_name":  {
+                                                                                                                                                                               "type":  "string",
+                                                                                                                                                                               "example":  "Technician"
+                                                                                                                                                                           }
+                                                                                                                                                         }
+                                                                                                                                      },
+                                                                                                                           "required_ppe":  {
+                                                                                                                                                "type":  "array",
+                                                                                                                                                "items":  {
+                                                                                                                                                              "$ref":  "#/components/schemas/RequiredPpeItem"
+                                                                                                                                                          }
+                                                                                                                                            }
+                                                                                                                       }
+                                                                                                    }
+                                                                                       }
+                                                                    },
+                                       "Role":  {
+                                                    "type":  "object",
+                                                    "properties":  {
+                                                                       "id":  {
+                                                                                  "type":  "integer",
+                                                                                  "example":  2
+                                                                              },
+                                                                       "role_name":  {
+                                                                                         "type":  "string",
+                                                                                         "example":  "Technician"
+                                                                                     },
+                                                                       "description":  {
+                                                                                           "type":  "string",
+                                                                                           "nullable":  true
+                                                                                       },
+                                                                       "created_at":  {
+                                                                                          "type":  "string",
+                                                                                          "format":  "date-time"
+                                                                                      }
+                                                                   }
+                                                },
+                                       "RolesListResponse":  {
+                                                                 "type":  "object",
+                                                                 "properties":  {
+                                                                                    "success":  {
+                                                                                                    "type":  "boolean",
+                                                                                                    "example":  true
+                                                                                                },
+                                                                                    "data":  {
+                                                                                                 "type":  "array",
+                                                                                                 "items":  {
+                                                                                                               "$ref":  "#/components/schemas/Role"
+                                                                                                           }
+                                                                                             }
+                                                                                }
+                                                             },
+                                       "RoleSingleResponse":  {
+                                                                  "type":  "object",
+                                                                  "properties":  {
+                                                                                     "success":  {
+                                                                                                     "type":  "boolean",
+                                                                                                     "example":  true
+                                                                                                 },
+                                                                                     "data":  {
+                                                                                                  "$ref":  "#/components/schemas/Role"
+                                                                                              }
+                                                                                 }
+                                                              },
+                                       "CreateRoleRequest":  {
+                                                                 "type":  "object",
+                                                                 "required":  [
+                                                                                  "role_name"
+                                                                              ],
+                                                                 "properties":  {
+                                                                                    "role_name":  {
+                                                                                                      "type":  "string",
+                                                                                                      "example":  "Construction Worker"
+                                                                                                  },
+                                                                                    "description":  {
+                                                                                                        "type":  "string",
+                                                                                                        "nullable":  true,
+                                                                                                        "example":  "Heavy-duty zone workers"
+                                                                                                    }
+                                                                                }
+                                                             },
+                                       "RolePpeResponse":  {
+                                                               "type":  "object",
+                                                               "properties":  {
+                                                                                  "success":  {
+                                                                                                  "type":  "boolean",
+                                                                                                  "example":  true
+                                                                                              },
+                                                                                  "data":  {
+                                                                                               "type":  "object",
+                                                                                               "properties":  {
+                                                                                                                  "role_id":  {
+                                                                                                                                  "type":  "integer",
+                                                                                                                                  "example":  2
+                                                                                                                              },
+                                                                                                                  "role_name":  {
+                                                                                                                                    "type":  "string",
+                                                                                                                                    "example":  "Technician"
+                                                                                                                                },
+                                                                                                                  "ppe_items":  {
+                                                                                                                                    "type":  "array",
+                                                                                                                                    "items":  {
+                                                                                                                                                  "type":  "object",
+                                                                                                                                                  "properties":  {
+                                                                                                                                                                     "id":  {
+                                                                                                                                                                                "type":  "integer",
+                                                                                                                                                                                "example":  1
+                                                                                                                                                                            },
+                                                                                                                                                                     "item_key":  {
+                                                                                                                                                                                      "type":  "string",
+                                                                                                                                                                                      "example":  "hard_hat"
+                                                                                                                                                                                  },
+                                                                                                                                                                     "display_name":  {
+                                                                                                                                                                                          "type":  "string",
+                                                                                                                                                                                          "example":  "Hard Hat"
+                                                                                                                                                                                      }
+                                                                                                                                                                 }
+                                                                                                                                              }
+                                                                                                                                }
+                                                                                                              }
+                                                                                           }
+                                                                              }
+                                                           },
+                                       "PpeItem":  {
+                                                       "type":  "object",
+                                                       "properties":  {
+                                                                          "id":  {
+                                                                                     "type":  "integer",
+                                                                                     "example":  1
+                                                                                 },
+                                                                          "item_key":  {
+                                                                                           "type":  "string",
+                                                                                           "example":  "hard_hat"
+                                                                                       },
+                                                                          "display_name":  {
+                                                                                               "type":  "string",
+                                                                                               "example":  "Hard Hat"
+                                                                                           },
+                                                                          "icon_name":  {
+                                                                                            "type":  "string",
+                                                                                            "example":  "helmet"
+                                                                                        }
+                                                                      }
+                                                   },
+                                       "PpeItemsListResponse":  {
+                                                                    "type":  "object",
+                                                                    "properties":  {
+                                                                                       "success":  {
+                                                                                                       "type":  "boolean",
+                                                                                                       "example":  true
+                                                                                                   },
+                                                                                       "data":  {
+                                                                                                    "type":  "array",
+                                                                                                    "items":  {
+                                                                                                                  "$ref":  "#/components/schemas/PpeItem"
+                                                                                                              }
+                                                                                                }
+                                                                                   }
+                                                                },
+                                       "PpeItemSingleResponse":  {
+                                                                     "type":  "object",
+                                                                     "properties":  {
+                                                                                        "success":  {
+                                                                                                        "type":  "boolean",
+                                                                                                        "example":  true
+                                                                                                    },
+                                                                                        "data":  {
+                                                                                                     "$ref":  "#/components/schemas/PpeItem"
+                                                                                                 }
+                                                                                    }
+                                                                 },
+                                       "CreatePpeItemRequest":  {
+                                                                    "type":  "object",
+                                                                    "required":  [
+                                                                                     "item_key",
+                                                                                     "display_name"
+                                                                                 ],
+                                                                    "properties":  {
+                                                                                       "item_key":  {
+                                                                                                        "type":  "string",
+                                                                                                        "example":  "safety_goggles"
+                                                                                                    },
+                                                                                       "display_name":  {
+                                                                                                            "type":  "string",
+                                                                                                            "example":  "Safety Goggles"
+                                                                                                        },
+                                                                                       "icon_name":  {
+                                                                                                         "type":  "string",
+                                                                                                         "nullable":  true,
+                                                                                                         "example":  "goggles"
+                                                                                                     }
+                                                                                   }
+                                                                },
+                                       "UpdatePpeItemRequest":  {
+                                                                    "type":  "object",
+                                                                    "properties":  {
+                                                                                       "item_key":  {
+                                                                                                        "type":  "string"
+                                                                                                    },
+                                                                                       "display_name":  {
+                                                                                                            "type":  "string"
+                                                                                                        },
+                                                                                       "icon_name":  {
+                                                                                                         "type":  "string",
+                                                                                                         "nullable":  true
+                                                                                                     }
+                                                                                   }
+                                                                },
+                                       "EntryResult":  {
+                                                           "type":  "string",
+                                                           "enum":  [
+                                                                        "PASS",
+                                                                        "FAIL",
+                                                                        "UNKNOWN_CARD"
+                                                                    ]
+                                                       },
+                                       "DetectionItem":  {
+                                                             "type":  "object",
+                                                             "required":  [
+                                                                              "ppe_item_id",
+                                                                              "was_required",
+                                                                              "was_detected",
+                                                                              "confidence"
+                                                                          ],
+                                                             "properties":  {
+                                                                                "ppe_item_id":  {
+                                                                                                    "type":  "integer",
+                                                                                                    "example":  1
+                                                                                                },
+                                                                                "was_required":  {
+                                                                                                     "type":  "boolean",
+                                                                                                     "example":  true
+                                                                                                 },
+                                                                                "was_detected":  {
+                                                                                                     "type":  "boolean",
+                                                                                                     "example":  true
+                                                                                                 },
+                                                                                "confidence":  {
+                                                                                                   "type":  "number",
+                                                                                                   "format":  "float",
+                                                                                                   "nullable":  true,
+                                                                                                   "example":  0.97
+                                                                                               }
+                                                                            }
+                                                         },
+                                       "CreateEntryLogRequest":  {
+                                                                     "type":  "object",
+                                                                     "required":  [
+                                                                                      "worker_id",
+                                                                                      "rfid_uid_scanned",
+                                                                                      "result",
+                                                                                      "detections"
+                                                                                  ],
+                                                                     "properties":  {
+                                                                                        "worker_id":  {
+                                                                                                          "type":  "integer",
+                                                                                                          "nullable":  true,
+                                                                                                          "example":  1
+                                                                                                      },
+                                                                                        "rfid_uid_scanned":  {
+                                                                                                                 "type":  "string",
+                                                                                                                 "example":  "A3F2C1D4"
+                                                                                                             },
+                                                                                        "result":  {
+                                                                                                       "$ref":  "#/components/schemas/EntryResult"
+                                                                                                   },
+                                                                                        "inspection_time_ms":  {
+                                                                                                                   "type":  "integer",
+                                                                                                                   "nullable":  true,
+                                                                                                                   "example":  4200
+                                                                                                               },
+                                                                                        "camera_snapshot_url":  {
+                                                                                                                    "type":  "string",
+                                                                                                                    "nullable":  true,
+                                                                                                                    "example":  "/snapshots/20260320_091500.jpg"
+                                                                                                                },
+                                                                                        "detections":  {
+                                                                                                           "type":  "array",
+                                                                                                           "items":  {
+                                                                                                                         "$ref":  "#/components/schemas/DetectionItem"
+                                                                                                                     }
+                                                                                                       }
+                                                                                    }
+                                                                 },
+                                       "EntryLogCreateResponse":  {
+                                                                      "type":  "object",
+                                                                      "properties":  {
+                                                                                         "success":  {
+                                                                                                         "type":  "boolean",
+                                                                                                         "example":  true
+                                                                                                     },
+                                                                                         "data":  {
+                                                                                                      "type":  "object",
+                                                                                                      "properties":  {
+                                                                                                                         "entry_log_id":  {
+                                                                                                                                              "type":  "integer",
+                                                                                                                                              "example":  142
+                                                                                                                                          },
+                                                                                                                         "result":  {
+                                                                                                                                        "$ref":  "#/components/schemas/EntryResult"
+                                                                                                                                    },
+                                                                                                                         "scanned_at":  {
+                                                                                                                                            "type":  "string",
+                                                                                                                                            "format":  "date-time"
+                                                                                                                                        },
+                                                                                                                         "missing_ppe":  {
+                                                                                                                                             "type":  "array",
+                                                                                                                                             "items":  {
+                                                                                                                                                           "type":  "object",
+                                                                                                                                                           "properties":  {
+                                                                                                                                                                              "item_key":  {
+                                                                                                                                                                                               "type":  "string",
+                                                                                                                                                                                               "example":  "gloves"
+                                                                                                                                                                                           },
+                                                                                                                                                                              "display_name":  {
+                                                                                                                                                                                                   "type":  "string",
+                                                                                                                                                                                                   "example":  "Gloves"
+                                                                                                                                                                                               },
+                                                                                                                                                                              "icon_name":  {
+                                                                                                                                                                                                "type":  "string",
+                                                                                                                                                                                                "example":  "glove"
+                                                                                                                                                                                            }
+                                                                                                                                                                          }
+                                                                                                                                                       }
+                                                                                                                                         }
+                                                                                                                     }
+                                                                                                  }
+                                                                                     }
+                                                                  },
+                                       "EntryLogListItem":  {
+                                                                "type":  "object",
+                                                                "properties":  {
+                                                                                   "id":  {
+                                                                                              "type":  "integer",
+                                                                                              "example":  142
+                                                                                          },
+                                                                                   "worker_id":  {
+                                                                                                     "type":  "integer",
+                                                                                                     "nullable":  true,
+                                                                                                     "example":  1
+                                                                                                 },
+                                                                                   "worker_name":  {
+                                                                                                       "type":  "string",
+                                                                                                       "nullable":  true,
+                                                                                                       "example":  "Ali Yilmaz"
+                                                                                                   },
+                                                                                   "rfid_uid_scanned":  {
+                                                                                                            "type":  "string",
+                                                                                                            "example":  "A3F2C1D4"
+                                                                                                        },
+                                                                                   "result":  {
+                                                                                                  "$ref":  "#/components/schemas/EntryResult"
+                                                                                              },
+                                                                                   "scanned_at":  {
+                                                                                                      "type":  "string",
+                                                                                                      "format":  "date-time"
+                                                                                                  },
+                                                                                   "inspection_time_ms":  {
+                                                                                                              "type":  "integer",
+                                                                                                              "nullable":  true
+                                                                                                          },
+                                                                                   "camera_snapshot_url":  {
+                                                                                                               "type":  "string",
+                                                                                                               "nullable":  true
+                                                                                                           },
+                                                                                   "missing_ppe":  {
+                                                                                                       "type":  "array",
+                                                                                                       "items":  {
+                                                                                                                     "type":  "object",
+                                                                                                                     "properties":  {
+                                                                                                                                        "item_key":  {
+                                                                                                                                                         "type":  "string"
+                                                                                                                                                     },
+                                                                                                                                        "display_name":  {
+                                                                                                                                                             "type":  "string"
+                                                                                                                                                         }
+                                                                                                                                    }
+                                                                                                                 }
+                                                                                                   }
+                                                                               }
+                                                            },
+                                       "EntryLogsListResponse":  {
+                                                                     "type":  "object",
+                                                                     "properties":  {
+                                                                                        "success":  {
+                                                                                                        "type":  "boolean",
+                                                                                                        "example":  true
+                                                                                                    },
+                                                                                        "data":  {
+                                                                                                     "type":  "array",
+                                                                                                     "items":  {
+                                                                                                                   "$ref":  "#/components/schemas/EntryLogListItem"
+                                                                                                               }
+                                                                                                 },
+                                                                                        "total":  {
+                                                                                                      "type":  "integer",
+                                                                                                      "example":  387
+                                                                                                  },
+                                                                                        "limit":  {
+                                                                                                      "type":  "integer",
+                                                                                                      "example":  50
+                                                                                                  },
+                                                                                        "offset":  {
+                                                                                                       "type":  "integer",
+                                                                                                       "example":  0
+                                                                                                   }
+                                                                                    }
+                                                                 },
+                                       "EntryLogStatsResponse":  {
+                                                                     "type":  "object",
+                                                                     "properties":  {
+                                                                                        "success":  {
+                                                                                                        "type":  "boolean",
+                                                                                                        "example":  true
+                                                                                                    },
+                                                                                        "data":  {
+                                                                                                     "type":  "object",
+                                                                                                     "properties":  {
+                                                                                                                        "total_scans":  {
+                                                                                                                                            "type":  "integer",
+                                                                                                                                            "example":  387
+                                                                                                                                        },
+                                                                                                                        "passed":  {
+                                                                                                                                       "type":  "integer",
+                                                                                                                                       "example":  301
+                                                                                                                                   },
+                                                                                                                        "failed":  {
+                                                                                                                                       "type":  "integer",
+                                                                                                                                       "example":  74
+                                                                                                                                   },
+                                                                                                                        "unknown_cards":  {
+                                                                                                                                              "type":  "integer",
+                                                                                                                                              "example":  12
+                                                                                                                                          },
+                                                                                                                        "compliance_rate":  {
+                                                                                                                                                "type":  "number",
+                                                                                                                                                "format":  "float",
+                                                                                                                                                "example":  77.8
+                                                                                                                                            },
+                                                                                                                        "daily_data":  {
+                                                                                                                                           "type":  "array",
+                                                                                                                                           "items":  {
+                                                                                                                                                         "type":  "object",
+                                                                                                                                                         "properties":  {
+                                                                                                                                                                            "date":  {
+                                                                                                                                                                                         "type":  "string",
+                                                                                                                                                                                         "format":  "date",
+                                                                                                                                                                                         "example":  "2026-03-26"
+                                                                                                                                                                                     },
+                                                                                                                                                                            "pass":  {
+                                                                                                                                                                                         "type":  "integer",
+                                                                                                                                                                                         "example":  12
+                                                                                                                                                                                     },
+                                                                                                                                                                            "fail":  {
+                                                                                                                                                                                         "type":  "integer",
+                                                                                                                                                                                         "example":  3
+                                                                                                                                                                                     },
+                                                                                                                                                                            "rate":  {
+                                                                                                                                                                                         "type":  "number",
+                                                                                                                                                                                         "format":  "float",
+                                                                                                                                                                                         "example":  80
+                                                                                                                                                                                     }
+                                                                                                                                                                        }
+                                                                                                                                                     }
+                                                                                                                                       },
+                                                                                                                        "most_missed_ppe":  {
+                                                                                                                                                "type":  "array",
+                                                                                                                                                "items":  {
+                                                                                                                                                              "type":  "object",
+                                                                                                                                                              "properties":  {
+                                                                                                                                                                                 "item_key":  {
+                                                                                                                                                                                                  "type":  "string",
+                                                                                                                                                                                                  "example":  "gloves"
+                                                                                                                                                                                              },
+                                                                                                                                                                                 "display_name":  {
+                                                                                                                                                                                                      "type":  "string",
+                                                                                                                                                                                                      "example":  "Gloves"
+                                                                                                                                                                                                  },
+                                                                                                                                                                                 "miss_count":  {
+                                                                                                                                                                                                    "type":  "integer",
+                                                                                                                                                                                                    "example":  48
+                                                                                                                                                                                                }
+                                                                                                                                                                             }
+                                                                                                                                                          }
+                                                                                                                                            },
+                                                                                                                        "period":  {
+                                                                                                                                       "type":  "object",
+                                                                                                                                       "properties":  {
+                                                                                                                                                          "start_date":  {
+                                                                                                                                                                             "type":  "string",
+                                                                                                                                                                             "format":  "date",
+                                                                                                                                                                             "nullable":  true
+                                                                                                                                                                         },
+                                                                                                                                                          "end_date":  {
+                                                                                                                                                                           "type":  "string",
+                                                                                                                                                                           "format":  "date",
+                                                                                                                                                                           "nullable":  true
+                                                                                                                                                                       }
+                                                                                                                                                      }
+                                                                                                                                   }
+                                                                                                                    }
+                                                                                                 }
+                                                                                    }
+                                                                 }
+                                   }
+                   }
+}

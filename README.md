@@ -56,7 +56,7 @@
 | Module | Name | Language / Stack | Runs On |
 |---|---|---|---|
 | MOD-01 | AI & Vision | Python 3.11, YOLOv8n, ONNX Runtime, OpenCV | Raspberry Pi 5 (Hailo-8L NPU) |
-| MOD-02 | Turnstile Gate Control | C / C++, PWM, PCA9685 I2C | Raspberry Pi 5 |
+| MOD-02 | Turnstile Gate Control | Python 3.11, PWM, PCA9685 I2C | Raspberry Pi 5 |
 | MOD-03 | IoT Orchestrator | Python 3.11, HTTP, SPI (RC522) | Raspberry Pi 5 |
 | MOD-04 | Backend & Database | Node.js 20, Express 5, PostgreSQL 14, Prisma | Local server / dev machine |
 | MOD-05 | UI/UX | React 18, TypeScript 5, Tailwind CSS, WebSocket | Browser / Tablet |
@@ -105,10 +105,10 @@ Two high-torque servo motors are driven by PWM signals through a PCA9685 I2C PWM
 controller connected to the Raspberry Pi 5 GPIO. Exposes a minimal open/close API
 consumed exclusively by MOD-03.
 
-**Public API:** `module_02_turnstile/include/gate_control.hpp`, `servo_driver.hpp`
-```cpp
-gate_open();   // Servo rotates to unlock position; called on GRANTED.
-gate_close();  // Servo rotates to locked position; called after passage timeout.
+**Public API:** `turnstile/gate_control.py`
+```python
+gate_open(direction)  # Opens gate for DIR_ENTRY or DIR_EXIT; auto-closes after timeout.
+gate_close()          # Returns both servos to closed position (90°).
 ```
 
 ---

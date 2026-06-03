@@ -1,0 +1,203 @@
+"""
+http_backend_client.py
+======================
+MOD-03 IoT Module — HTTP Backend Client Implementation
+
+Concrete implementation of BackendClient that communicates with the
+MOD-04 Express/PostgreSQL REST API over HTTP.
+
+Endpoints used:
+    GET  {base_url}/workers/card/{card_id}   → worker profile + PPE list
+    POST {base_url}/entry-logs               → log an inspection result
+
+Dependencies:
+    pip install requests
+
+Authors : Alperen Söylen  (220104004024) — Primary
+Date    : 2026-04-11
+Version : 0.2
+
+Changelog:
+    v0.1 (2026-04-11) — Initial implementation
+    v0.2 (2026-05-19) — Align field names to confirmed OpenAPI spec v1.4.0;
+                         fix inspection_time_ms (duration, not timestamp);
+                         update default base_url to Heroku deployment.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+import requests
+from requests.adapters import HTTPAdapter
+from requests.exceptions import RequestException
+from urllib3.util.retry import Retry
+
+from src.iot_core.interfaces.backend_client import BackendClient
+from src.iot_core.models import (
+    WorkerInfo,
+    EntryLog,
+    RequiredPpeItem,
+    SUPPORTED_PPE_KEYS,
+    normalize_ppe_item_key,
+)
+
+logger = logging.getLogger(__name__)
+
+# Default HTTP request timeout (seconds)
+_REQUEST_TIMEOUT_S: int = 5
+_MAX_RETRIES: int = 3
+_BACKOFF_FACTOR: float = 0.5
+
+
+class HttpBackendClient(BackendClient):
+    """
+    Communicates with MOD-04 (Express + PostgreSQL) via HTTP REST.
+
+    Args:
+        base_url: Root URL of the backend API, without trailing slash.
+                  e.g. "http://192.168.1.50:3000/api"
+
+    Note: RFID webhook owns port 8000 (HttpRfidReader); backend runs on :3000.
+    """
+
+    def __init__(self, base_url: str = "https://turnstile-backend-04e771aad5b6.herokuapp.com/api") -> None:
+        self._base_url = base_url.rstrip("/")
+        self._session = requests.Session()
+        
+        # Configure robust HTTP retry logic for network drops & 5xx errors
+        retry_strategy = Retry(
+            total=_MAX_RETRIES,
+            backoff_factor=_BACKOFF_FACTOR,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST", "PUT", "DELETE"]  # Ensure POST requests are retried
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
+
+        self._session.headers.update({"Content-Type": "application/json"})
+
+    # -------------------------------------------------------------------------
+    # BackendClient interface
+    # -------------------------------------------------------------------------
+
+    def get_worker(self, card_id: str) -> Optional[WorkerInfo]:
+        """
+        Retrieves worker profile and required PPE list for a given card ID.
+
+        Calls: GET /api/workers/card/{card_id}
+
+        Args:
+            card_id: RFID card UID string (e.g. "A3F2C1D4").
+
+        Returns:
+            WorkerInfo on success, None if card is not registered (404)
+            or if the request fails.
+        """
+        url = f"{self._base_url}/workers/card/{card_id}"
+        try:
+            response = self._session.get(url, timeout=_REQUEST_TIMEOUT_S)
+
+            if response.status_code == 404:
+                logger.info("get_worker(%r): card not registered (404)", card_id)
+                return None
+
+            response.raise_for_status()
+            payload = response.json()
+
+            if not payload.get("success"):
+                logger.error("get_worker(%r): API returned success=False", card_id)
+                return None
+            
+            data = payload["data"]
+            worker_data = data["worker"]
+            ppe_data = data.get("required_ppe", [])
+
+            worker = WorkerInfo(
+                worker_id=worker_data["id"],
+                worker_name=worker_data["full_name"],
+                role=worker_data["role_name"],
+                required_ppe=[
+                    RequiredPpeItem(
+                        id=ppe["id"],
+                        item_key=normalize_ppe_item_key(ppe["item_key"]),
+                        display_name=ppe.get("display_name"),
+                        icon_name=ppe.get("icon_name")
+                    )
+                    for ppe in ppe_data
+                ],
+            )
+
+            # Boundary check: MOD-04 must return item_keys from SUPPORTED_PPE_KEYS.
+            # An unknown key here means a contract mismatch with MOD-01/MOD-04 and
+            # will silently fail the worker (missing_ppe will always include it).
+            for ppe in worker.required_ppe:
+                if ppe.item_key not in SUPPORTED_PPE_KEYS:
+                    logger.warning(
+                        "get_worker(%r): backend returned unsupported item_key %r "
+                        "(supported: %s). Inspection for this worker will fail.",
+                        card_id, ppe.item_key, SUPPORTED_PPE_KEYS,
+                    )
+            logger.info(
+                "get_worker(%r): %s / %s (PPE: %s)",
+                card_id, worker.worker_name, worker.role, [p.item_key for p in worker.required_ppe],
+            )
+            return worker
+
+        except KeyError as exc:
+            logger.error(
+                "get_worker(%r): unexpected JSON field — %s. "
+                "Check field name mapping with MOD-04 team.", card_id, exc
+            )
+            return None
+        except RequestException as exc:
+            logger.error("get_worker(%r): HTTP error — %s", card_id, exc)
+            return None
+
+    def log_entry(self, log: EntryLog) -> bool:
+        """
+        Sends an inspection result to the backend for auditing.
+
+        Calls: POST /api/entry-logs
+
+        Args:
+            log: EntryLog data to persist.
+
+        Returns:
+            True if the backend accepted the log (2xx), False otherwise.
+        """
+        url = f"{self._base_url}/entry-logs"
+
+        payload = {
+            "worker_id":           log.worker_id,
+            "rfid_uid_scanned":    log.card_id,
+            "result":              log.decision.name,
+            "inspection_time_ms":  log.inspection_duration_ms,
+            "camera_snapshot_url": None,
+            "detections": [
+                {
+                    "ppe_item_id":  d.ppe_item_id,
+                    "was_required": d.was_required,
+                    "was_detected": d.was_detected,
+                    "confidence":   d.confidence,
+                }
+                for d in log.detections
+            ],
+        }
+
+        try:
+            response = self._session.post(
+                url, json=payload, timeout=_REQUEST_TIMEOUT_S
+            )
+            response.raise_for_status()
+            logger.info(
+                "log_entry(): logged — decision=%s, card=%s",
+                log.decision.name, log.card_id,
+            )
+            return True
+
+        except RequestException as exc:
+            logger.error("log_entry(): HTTP error — %s", exc)
+            return False

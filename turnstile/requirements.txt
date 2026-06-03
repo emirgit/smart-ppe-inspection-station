@@ -1,0 +1,18 @@
+# Adafruit ServoKit - high-level servo control via PCA9685
+adafruit-circuitpython-servokit
+
+# HTTP communication with backend
+requests
+
+# WebSocket server for display communication (MOD-05 tablet connects to RPi)
+websockets>=12,<15
+
+# Computer vision
+opencv-python
+
+# AI inference (YOLO11n exported to NCNN FP16, running on Raspberry Pi 5 CPU)
+ncnn
+numpy
+
+# Testing
+pytest
